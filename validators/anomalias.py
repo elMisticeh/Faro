@@ -21,6 +21,16 @@ load_dotenv()
 sb = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
 ai = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
+def _sanitizar_para_prompt(texto: str, max_chars: int = 500) -> str:
+    """Elimina secuencias de prompt injection antes de enviar a Claude."""
+    if not texto:
+        return ""
+    sanitizado = re.sub(
+        r'(?i)(ignora|ignore|forget|olvida|instrucciones|instructions)\s*(las\s*)?(anteriores?|previous|above|previas?)',
+        '[REDACTED]', texto
+    )
+    return sanitizado[:max_chars]
+
 _DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
 # ── COLONIAS IMPLAN ───────────────────────────────────────────────────────────
@@ -169,7 +179,7 @@ DATOS DEL LISTING:
 - Precio/m²: ${pm2:,.0f} MXN/m²
 - Colonia registrada en el anuncio: {colonia}
 - Colonia IMPLAN según coordenadas: {col_implan}
-- Descripción: {desc[:500]}
+- Descripción: {_sanitizar_para_prompt(desc)}
 
 CONTEXTO DE MERCADO TORREÓN:
 - Terrenos urbanos residenciales: $2,000–$12,000/m²

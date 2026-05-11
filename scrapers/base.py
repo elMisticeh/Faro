@@ -104,6 +104,16 @@ def parsear_features(textos: list) -> dict:
 
 # ─── Extracción con IA ────────────────────────────────────────────────────────
 
+def _sanitizar_para_prompt(texto: str, max_chars: int = 800) -> str:
+    """Elimina secuencias que podrían ser prompt injection antes de enviar a Claude."""
+    if not texto:
+        return ""
+    # Quitar bloques que parecen instrucciones (patrones comunes de injection)
+    import re as _re
+    sanitizado = _re.sub(r'(?i)(ignora|ignore|forget|olvida|instrucciones|instructions)\s*(las\s*)?(anteriores?|previous|above|previas?)', '[REDACTED]', texto)
+    # Limitar a max_chars
+    return sanitizado[:max_chars]
+
 def enriquecer_con_ia(descripcion: str, precio: float, colonia: str, tipo_op: str) -> dict:
     """
     Extrae todos los datos posibles de la descripción.
@@ -119,7 +129,7 @@ def enriquecer_con_ia(descripcion: str, precio: float, colonia: str, tipo_op: st
         f'Colonia actual: "{colonia}"\n'
         f"Precio: ${precio:,.0f} MXN\n"
         f"Operación: {tipo_op}\n"
-        f"Descripción: {descripcion[:800]}\n\n"
+        f"Descripción: {_sanitizar_para_prompt(descripcion)}\n\n"
         "Devuelve exactamente este JSON con valores reales (no objetos con instruccion):\n"
         "{\n"
         '  "tipo_inmueble": "casa|departamento|terreno|local_comercial|bodega|oficina|otro",\n'

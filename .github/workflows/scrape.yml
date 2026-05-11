@@ -45,11 +45,17 @@ jobs:
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Inputs via env para evitar shell injection — nunca interpolar ${{ }} directo en run
+          GHA_PORTAL:   ${{ github.event.inputs.portal || 'todos' }}
+          GHA_SKIP_IA:  ${{ github.event.inputs.skip_ia || 'false' }}
         run: |
-          PORTAL="${{ github.event.inputs.portal || 'todos' }}"
-          SKIP_IA="${{ github.event.inputs.skip_ia || 'false' }}"
+          # Whitelist estricto de valores permitidos
+          case "$GHA_PORTAL" in
+            todos|i24|viva|lamudi|icasas|mc|prop|trovit|ml|remax) ;;
+            *) echo "ERROR: portal '$GHA_PORTAL' no permitido"; exit 1 ;;
+          esac
 
-          if [ "$SKIP_IA" = "true" ]; then
+          if [ "$GHA_SKIP_IA" = "true" ]; then
             python run.py full --skip-ia
           else
             python run.py full

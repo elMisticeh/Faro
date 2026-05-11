@@ -30,6 +30,16 @@ load_dotenv()
 sb = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
 ai = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
+def _sanitizar_para_prompt(texto: str, max_chars: int = 800) -> str:
+    """Elimina secuencias de prompt injection antes de enviar a Claude."""
+    if not texto:
+        return ""
+    sanitizado = re.sub(
+        r'(?i)(ignora|ignore|forget|olvida|instrucciones|instructions)\s*(las\s*)?(anteriores?|previous|above|previas?)',
+        '[REDACTED]', texto
+    )
+    return sanitizado[:max_chars]
+
 _DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
 # ── Geometría IMPLAN ──────────────────────────────────────────────────────────
@@ -127,7 +137,7 @@ Estas no coinciden, lo que indica que una está mal. Lee la descripción y deter
 cuál es la colonia, fraccionamiento o zona REAL donde se ubica la propiedad.
 
 DESCRIPCIÓN DEL ANUNCIO:
-{descripcion[:800]}
+{_sanitizar_para_prompt(descripcion)}
 
 INSTRUCCIONES:
 - Si la descripción menciona explícitamente un fraccionamiento, colonia o zona de Torreón, extráela.

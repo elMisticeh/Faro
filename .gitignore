@@ -35,3 +35,15 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Archivos de exploración con posibles credenciales o schema expuesto
+archive/
+ayuda scraper/
+setup_scrapers.py
+setup_scrapers.ps1
+*.sql
+scheduler.py
+scraper_instagram.py
+ESTADO_PROYECTO.md
+memoria_mapa_calor.md
+i24_apis.json
