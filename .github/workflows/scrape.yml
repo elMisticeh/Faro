@@ -1,0 +1,65 @@
+name: Scrape semanal — Real Estate Torreón
+
+on:
+  # Cada lunes 8:00 UTC = 3:00am CDT / 2:00am CST
+  schedule:
+    - cron: '0 8 * * 1'
+  # También se puede disparar manualmente desde GitHub → Actions → Run workflow
+  workflow_dispatch:
+    inputs:
+      portal:
+        description: 'Portal a scrapear (todos|i24|remax|ml|prop)'
+        required: false
+        default: 'todos'
+      skip_ia:
+        description: 'Omitir llamadas a IA (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  scrape:
+    name: Pipeline completo
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Instalar Playwright y Chromium
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Correr pipeline completo
+        env:
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PORTAL="${{ github.event.inputs.portal || 'todos' }}"
+          SKIP_IA="${{ github.event.inputs.skip_ia || 'false' }}"
+
+          if [ "$SKIP_IA" = "true" ]; then
+            python run.py full --skip-ia
+          else
+            python run.py full
+          fi
+
+      - name: Subir log de ejecución como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-log-${{ github.run_id }}
+          path: '*.log'
+          retention-days: 30
+          if-no-files-found: ignore
