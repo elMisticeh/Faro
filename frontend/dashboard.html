@@ -417,7 +417,8 @@ th.sorted.asc::after { content: ' ↑'; }
     <button class="btn secondary" onclick="descargarResumen()" title="Resumen por colonia">↓ Resumen</button>
     <button class="btn secondary" onclick="document.querySelector('.config-overlay').classList.add('open')">⚙ Config</button>
   </div>
-</div>
+</div><!-- /filters-wrap -->
+</div><!-- /controls-bar -->
 
 <!-- TABLE VIEW -->
 <div id="view-table">
@@ -561,8 +562,6 @@ th.sorted.asc::after { content: ' ↑'; }
 
 </div><!-- /view-mercado -->
 
-</div><!-- /view-mercado -->
-
 <!-- DEMOGRAFÍA VIEW ─────────────────────────────────────────── -->
 <div id="view-demografia">
   <div id="demo-map-container">
@@ -643,7 +642,7 @@ function switchMainTab(tab) {
   document.getElementById('view-mercado').style.display = tab === 'mercado' ? 'block' : 'none';
   document.getElementById('view-demografia').style.display = tab === 'demografia' ? 'block' : 'none';
   if (tab === 'demografia') initDemoMap();
-  if (tab === 'mercado' && currentSubTab === 'mapa') setTimeout(()=>{ if(mapInstance) mapInstance.invalidateSize(); }, 50);
+  if (tab === 'mercado' && currentSubTab === 'mapa') setTimeout(()=>{ if(map) map.invalidateSize(); }, 100);
 }
 
 function switchSubTab(sub) {
@@ -656,7 +655,7 @@ function switchSubTab(sub) {
   document.getElementById('view-table').style.display      = sub === 'lista'      ? 'block' : 'none';
   document.getElementById('view-map').style.display        = sub === 'mapa'        ? 'block' : 'none';
   document.getElementById('view-validacion').style.display = sub === 'validacion' ? 'block' : 'none';
-  if (sub === 'mapa') initMap();
+  if (sub === 'mapa') { initMap(); setTimeout(() => { if(map) map.invalidateSize(); }, 100); }
   if (sub === 'validacion') cargarValidacion();
 }
 
