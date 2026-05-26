@@ -21,6 +21,10 @@ env/
 *.json
 !i24_apis.json
 
+# Excepciones — app principal
+!frontend/dashboard.html
+!docs/index.html
+
 # Datos locales (los GeoJSON sí se incluyen)
 propcom_htmls/
 
