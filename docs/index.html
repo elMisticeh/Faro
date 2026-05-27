@@ -174,8 +174,8 @@ a.link-ext:hover{text-decoration:underline}
 .basemap-btn.active{background:var(--accent-dim);border-color:oklch(82% 0.06 264);color:var(--accent)}
 
 /* Hex sidebar */
-#hex-sidebar{position:absolute;top:0;right:0;bottom:0;width:300px;background:var(--surface);border-left:1px solid var(--border);z-index:1000;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.16,1,.3,1);overflow:hidden;box-shadow:var(--shadow)}
-#hex-sidebar.open{transform:translateX(0)}
+#hex-sidebar,#demo-sidebar{position:absolute;top:0;right:0;bottom:0;background:var(--surface);border-left:1px solid var(--border);z-index:1000;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.16,1,.3,1);overflow:hidden;box-shadow:var(--shadow)}
+#hex-sidebar.open,#demo-sidebar.open{transform:translateX(0)}
 .hex-sidebar-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .hex-sidebar-title{font-size:13px;font-weight:700;color:var(--text)}
 .hex-sidebar-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
