@@ -232,7 +232,26 @@ a.link-ext:hover{text-decoration:underline}
 .val-btn-ok{background:oklch(95% 0.05 142);color:var(--success);border:1px solid oklch(88% 0.08 142)}
 .val-btn-err{background:oklch(96% 0.04 25);color:var(--accent3);border:1px solid oklch(88% 0.08 25)}
 .val-btn-link{background:var(--surface2);color:var(--accent2);border:1px solid var(--border)}
+.val-btn-edit{background:var(--surface2);color:var(--accent);border:1px solid var(--border)}
+.val-btn-pin{background:oklch(95% 0.04 200);color:oklch(40% 0.12 200);border:1px solid oklch(85% 0.07 200)}
 .val-empty{padding:60px;text-align:center;color:var(--muted);font-family:var(--mono)}
+/* Edit form inline */
+.val-edit-form{display:none;margin-top:12px;padding:14px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)}
+.val-edit-form.open{display:block}
+.val-edit-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.val-edit-row.full{grid-template-columns:1fr}
+.val-edit-label{font-size:11px;color:var(--muted);font-weight:600;margin-bottom:3px}
+.val-edit-input{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:5px;font-size:13px;font-family:var(--font);background:var(--surface);color:var(--text);box-sizing:border-box}
+.val-edit-actions{display:flex;gap:8px;margin-top:10px}
+/* Pin modal */
+.pin-modal{display:none;position:fixed;inset:0;background:oklch(14% 0.015 264 / 0.55);z-index:300;align-items:center;justify-content:center}
+.pin-modal.open{display:flex}
+.pin-modal-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0;width:560px;max-width:92vw;box-shadow:var(--shadow);overflow:hidden}
+.pin-modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.pin-modal-header h3{margin:0;font-size:15px}
+.pin-modal-sub{font-size:12px;color:var(--muted);margin-top:2px}
+#pin-map{height:340px;width:100%}
+.pin-modal-footer{padding:14px 20px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border)}
 
 /* CONFIG MODAL */
 .config-overlay{display:none;position:fixed;inset:0;background:oklch(14% 0.015 264 / 0.45);z-index:200;align-items:center;justify-content:center}
@@ -543,6 +562,25 @@ a.link-ext:hover{text-decoration:underline}
   </div>
   <div class="val-cards" id="val-cards">
     <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+</div>
+
+<!-- PIN RELOCATION MODAL -->
+<div class="pin-modal" id="pin-modal">
+  <div class="pin-modal-box">
+    <div class="pin-modal-header">
+      <div>
+        <h3>Reubicar pin</h3>
+        <div class="pin-modal-sub">Arrastra el marcador a la ubicación correcta</div>
+      </div>
+      <button class="hex-close" onclick="cerrarModalPin()">&#x2715;</button>
+    </div>
+    <div id="pin-map"></div>
+    <div class="pin-modal-footer">
+      <span id="pin-coords" style="font-size:12px;color:var(--muted);flex:1;align-self:center"></span>
+      <button class="btn secondary" onclick="cerrarModalPin()">Cancelar</button>
+      <button class="btn" onclick="guardarPin()">Guardar ubicación</button>
+    </div>
   </div>
 </div>
 
@@ -1666,8 +1704,27 @@ function renderValidacion() {
       </div>
       <div class="val-card-actions">
         ${d.link_publicacion ? `<button class="val-btn val-btn-link" onclick="window.open('${d.link_publicacion}','_blank')">↗ Ver</button>` : ''}
-        <button class="val-btn val-btn-ok"  onclick="validar('${d.id}','aprobado')">✓ OK</button>
-        <button class="val-btn val-btn-err" onclick="validar('${d.id}','error')">✗ Error</button>
+        <button class="val-btn val-btn-ok"   onclick="validar('${d.id}','aprobado')">✓ OK</button>
+        <button class="val-btn val-btn-err"  onclick="validar('${d.id}','error')">✗ Error</button>
+        <button class="val-btn val-btn-edit" onclick="toggleEditar('${d.id}')">✎ Editar</button>
+        ${d.lat && d.lng ? `<button class="val-btn val-btn-pin" onclick="abrirMapaPin('${d.id}',${d.lat},${d.lng})">⊕ Pin</button>` : ''}
+      </div>
+    </div>
+    <div class="val-edit-form" id="val-edit-${d.id}">
+      <div class="val-edit-row">
+        <div><div class="val-edit-label">Precio MXN</div><input class="val-edit-input" id="ei-precio-${d.id}" type="number" value="${d.precio_mxn||''}" placeholder="ej. 2500000"></div>
+        <div><div class="val-edit-label">Colonia</div><input class="val-edit-input" id="ei-colonia-${d.id}" type="text" value="${(d.colonia||'').replace(/"/g,'&quot;')}" placeholder="Nombre colonia"></div>
+      </div>
+      <div class="val-edit-row">
+        <div><div class="val-edit-label">m² terreno</div><input class="val-edit-input" id="ei-m2t-${d.id}" type="number" value="${d.m2_terreno||''}"></div>
+        <div><div class="val-edit-label">m² construcción</div><input class="val-edit-input" id="ei-m2c-${d.id}" type="number" value="${d.m2_construccion||''}"></div>
+      </div>
+      <div class="val-edit-row full">
+        <div><div class="val-edit-label">Notas (motivo del cambio)</div><input class="val-edit-input" id="ei-notas-${d.id}" type="text" placeholder="ej. precio con dígito extra según descripción"></div>
+      </div>
+      <div class="val-edit-actions">
+        <button class="btn" onclick="guardarEdicion('${d.id}')">Guardar cambios</button>
+        <button class="btn secondary" onclick="toggleEditar('${d.id}')">Cancelar</button>
       </div>
     </div>`;
   }).join('');
@@ -1704,6 +1761,101 @@ async function validar(id, decision) {
   }
 
   renderValidacion();
+}
+
+// ── EDICIÓN MANUAL ────────────────────────────────────────────────────────────
+function toggleEditar(id) {
+  const form = document.getElementById('val-edit-' + id);
+  form.classList.toggle('open');
+}
+
+async function guardarEdicion(id) {
+  const precio   = parseFloat(document.getElementById('ei-precio-'  + id).value) || null;
+  const colonia  = document.getElementById('ei-colonia-' + id).value.trim() || null;
+  const m2t      = parseFloat(document.getElementById('ei-m2t-'    + id).value) || null;
+  const m2c      = parseFloat(document.getElementById('ei-m2c-'    + id).value) || null;
+  const notas    = document.getElementById('ei-notas-'  + id).value.trim();
+
+  const update = { editado_manualmente: true, fecha_edicion: new Date().toISOString() };
+  if (precio  !== null) update.precio_mxn       = precio;
+  if (colonia !== null) update.colonia           = colonia;
+  if (m2t     !== null) update.m2_terreno        = m2t;
+  if (m2c     !== null) update.m2_construccion   = m2c;
+  if (notas)            update.notas_editor      = notas;
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) { alert('Sin conexión Supabase'); return; }
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/listings?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(update)
+    });
+    if (!r.ok) throw new Error(await r.text());
+
+    // Actualizar en memoria
+    const idx = allData.findIndex(d => String(d.id) === String(id));
+    if (idx >= 0) Object.assign(allData[idx], update);
+    const vi = valData.findIndex(d => String(d.id) === String(id));
+    if (vi >= 0) Object.assign(valData[vi], update);
+
+    toggleEditar(id);
+    renderValidacion();
+  } catch(e) { alert('Error guardando: ' + e.message); }
+}
+
+// ── REUBICAR PIN ──────────────────────────────────────────────────────────────
+let _pinMap = null, _pinMarker = null, _pinListingId = null;
+
+function abrirMapaPin(id, lat, lng) {
+  _pinListingId = id;
+  document.getElementById('pin-modal').classList.add('open');
+  document.getElementById('pin-coords').textContent = `${(+lat).toFixed(6)}, ${(+lng).toFixed(6)}`;
+
+  if (!_pinMap) {
+    _pinMap = L.map('pin-map').setView([lat, lng], 16);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; CartoDB', maxZoom: 19
+    }).addTo(_pinMap);
+
+    _pinMarker = L.marker([lat, lng], { draggable: true }).addTo(_pinMap);
+    _pinMarker.on('dragend', () => {
+      const p = _pinMarker.getLatLng();
+      document.getElementById('pin-coords').textContent = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+    });
+  } else {
+    _pinMap.setView([lat, lng], 16);
+    _pinMarker.setLatLng([lat, lng]);
+    document.getElementById('pin-coords').textContent = `${(+lat).toFixed(6)}, ${(+lng).toFixed(6)}`;
+  }
+
+  setTimeout(() => _pinMap.invalidateSize(), 150);
+}
+
+function cerrarModalPin() {
+  document.getElementById('pin-modal').classList.remove('open');
+}
+
+async function guardarPin() {
+  if (!_pinMarker || !_pinListingId) return;
+  const { lat, lng } = _pinMarker.getLatLng();
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) { alert('Sin conexión Supabase'); return; }
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/listings?id=eq.${_pinListingId}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ lat, lng, editado_manualmente: true, fecha_edicion: new Date().toISOString() })
+    });
+    if (!r.ok) throw new Error(await r.text());
+
+    const idx = allData.findIndex(d => String(d.id) === String(_pinListingId));
+    if (idx >= 0) { allData[idx].lat = lat; allData[idx].lng = lng; }
+
+    cerrarModalPin();
+    renderValidacion();
+  } catch(e) { alert('Error guardando pin: ' + e.message); }
 }
 
 // Mostrar badge al cargar

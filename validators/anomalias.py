@@ -325,11 +325,11 @@ def main():
                     'precio_corregido': precio_corregido,
                     'desactivar': resultado.get('confianza') == 'alta' and not precio_corregido,
                 })
-                corr_txt = f" → precio corregido: ${precio_corregido:,.0f}" if precio_corregido else ""
-                print(f"    → ERROR {resultado.get('confianza','')}: {resultado.get('motivo','')[:60]}{corr_txt}")
+                corr_txt = f" -> precio corregido: ${precio_corregido:,.0f}" if precio_corregido else ""
+                print(f"    -> ERROR {resultado.get('confianza','')}: {resultado.get('motivo','')[:60]}{corr_txt}")
             else:
                 falsos_positivos.append(listing['id'])
-                print(f"    → OK: {resultado.get('motivo','')[:60]}")
+                print(f"    -> OK: {resultado.get('motivo','')[:60]}")
         else:
             confirmados_error.append({
                 'id': listing['id'], 'motivo': motivo_auto,
