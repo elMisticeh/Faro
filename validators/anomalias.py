@@ -135,8 +135,10 @@ def _colonia_fuera_de_pin(d):
 REGLAS = {
     'terreno_pm2_muy_bajo':   lambda d: _es_terreno(d) and _pm2_terreno(d) and _pm2_terreno(d) < 500,
     'terreno_pm2_muy_alto':   lambda d: _es_terreno(d) and _pm2_terreno(d) and _pm2_terreno(d) > 15000,
+    'terreno_pm2_extremo':    lambda d: _es_terreno(d) and _pm2_terreno(d) and _pm2_terreno(d) > 30000,
     'precio_venta_muy_bajo':  lambda d: d['tipo_operacion'] == 'venta' and d.get('precio_mxn') and d['precio_mxn'] < 200000,
     'precio_venta_muy_alto':  lambda d: d['tipo_operacion'] == 'venta' and d.get('precio_mxn') and d['precio_mxn'] > 500_000_000,
+    'precio_venta_extremo':   lambda d: d.get('precio_mxn') and d['precio_mxn'] > 1_000_000_000,
     'posible_renta_en_venta': lambda d: d['tipo_operacion'] == 'venta' and d.get('precio_mxn') and d['precio_mxn'] < 50000,
     'colonia_pin_mismatch':   lambda d: _colonia_fuera_de_pin(d),
 }
@@ -144,11 +146,16 @@ REGLAS = {
 MOTIVOS = {
     'terreno_pm2_muy_bajo':   'pm2 < $500 — posible terreno rural/ejidal',
     'terreno_pm2_muy_alto':   'pm2 > $15,000 — outlier muy alto',
+    'terreno_pm2_extremo':    'pm2 > $30,000 — error de captura evidente',
     'precio_venta_muy_bajo':  'precio venta < $200K — posible error',
     'precio_venta_muy_alto':  'precio venta > $500M — posible error captura',
+    'precio_venta_extremo':   'precio > $1,000M — error de captura evidente',
     'posible_renta_en_venta': 'precio < $50K catalogado como venta — posible renta',
     'colonia_pin_mismatch':   'pin fuera del polígono de la colonia registrada',
 }
+
+# Reglas tan extremas que se desactivan sin necesidad de confirmación IA
+REGLAS_AUTO_DESACTIVAR = {'terreno_pm2_extremo', 'precio_venta_extremo'}
 
 def evaluar_reglas(listing):
     violadas = []
@@ -168,38 +175,45 @@ def validar_con_ia(listing):
     pm2     = _pm2_terreno(listing) or 0
     op      = listing.get('tipo_operacion', '')
     tipo    = listing.get('tipo_inmueble', '')
+    fuente  = listing.get('pagina_fuente', '')
     col_implan = _get_colonia_implan(listing.get('lat'), listing.get('lng')) or '(fuera de cobertura)'
 
     prompt = f"""Analiza este listing inmobiliario de Torreón, Coahuila, México y determina si tiene errores de datos.
 
 DATOS DEL LISTING:
 - Tipo: {tipo} en {op}
-- Precio total: ${precio:,.0f} MXN
+- Fuente: {fuente}
+- Precio total listado: ${precio:,.0f} MXN
 - Superficie: {m2:,.0f} m²
 - Precio/m²: ${pm2:,.0f} MXN/m²
-- Colonia registrada en el anuncio: {colonia}
-- Colonia IMPLAN según coordenadas: {col_implan}
-- Descripción: {_sanitizar_para_prompt(desc)}
+- Colonia registrada: {colonia}
+- Colonia IMPLAN según GPS: {col_implan}
+- Descripción: {_sanitizar_para_prompt(desc, 800)}
 
-CONTEXTO DE MERCADO TORREÓN:
-- Terrenos urbanos residenciales: $2,000–$12,000/m²
-- Terrenos comerciales urbanos: $3,000–$15,000/m²
+CONTEXTO MERCADO TORREÓN 2024:
+- Terrenos residenciales: $2,000–$12,000/m²
+- Terrenos comerciales: $3,000–$15,000/m²
 - Terrenos rurales/ejidales: $100–$500/m²
-- Renta mensual típica casa: $8,000–$25,000 MXN
-- Venta mínima terreno urbano: $300,000 MXN
+- Casas venta: $800,000–$8,000,000 MXN típico
+- Renta mensual casa: $8,000–$25,000 MXN
+- Precios en USD frecuentes en portales (1 USD ≈ 17 MXN)
 
 VERIFICA:
-1. ¿El precio parece de RENTA catalogado como VENTA?
-2. ¿La colonia del anuncio coincide razonablemente con la colonia IMPLAN de las coordenadas?
-3. ¿El precio/m² es coherente con el tipo de propiedad?
+1. ¿El precio tiene dígitos de más? (ej: 45645645 en lugar de 4564564)
+2. ¿Está en USD pero registrado como MXN sin conversión?
+3. ¿Es renta catalogada como venta?
+4. ¿La descripción menciona un precio diferente al registrado?
+5. ¿La colonia del anuncio coincide con GPS?
 
-Responde SOLO en JSON sin explicaciones adicionales:
-{{"es_error": true/false, "tipo_error": "renta_como_venta|colonia_incorrecta|precio_anomalo|ninguno", "motivo": "explicacion breve", "confianza": "alta|media|baja"}}"""
+Si detectas error de precio, intenta inferir el precio correcto desde la descripción.
+
+Responde SOLO en JSON:
+{{"es_error": true/false, "tipo_error": "digitos_extra|precio_usd_sin_convertir|renta_como_venta|colonia_incorrecta|precio_anomalo|ninguno", "motivo": "explicacion breve max 80 chars", "confianza": "alta|media|baja", "precio_corregido": null_o_numero_entero}}"""
 
     try:
         resp = ai.messages.create(
             model='claude-haiku-4-5-20251001',
-            max_tokens=200,
+            max_tokens=300,
             messages=[{'role': 'user', 'content': prompt}]
         )
         txt = resp.content[0].text.strip()
@@ -208,7 +222,7 @@ Responde SOLO en JSON sin explicaciones adicionales:
             return json.loads(m.group(0))
     except Exception as e:
         print(f"    IA error: {e}")
-    return {'es_error': False, 'tipo_error': 'ninguno', 'motivo': 'error al consultar IA', 'confianza': 'baja'}
+    return {'es_error': False, 'tipo_error': 'ninguno', 'motivo': 'error al consultar IA', 'confianza': 'baja', 'precio_corregido': None}
 
 
 def main():
@@ -272,38 +286,74 @@ def main():
         listing = s['listing']
         reglas  = s['reglas']
         motivo_auto = ' | '.join(MOTIVOS[r] for r in reglas)
+        precio_actual = listing.get('precio_mxn', 0) or 0
+
+        # Outliers tan extremos que se desactivan sin IA
+        if any(r in REGLAS_AUTO_DESACTIVAR for r in reglas):
+            confirmados_error.append({
+                'id': listing['id'], 'motivo': motivo_auto,
+                'confianza': 'alta', 'fuente': 'regla_extrema',
+                'precio_corregido': None, 'desactivar': True
+            })
+            print(f"  x EXTREMO [{listing.get('colonia','')}] ${precio_actual:,.0f} — {motivo_auto[:70]}")
+            continue
 
         if 'terreno_pm2_muy_bajo' in reglas:
-            confirmados_error.append({'id': listing['id'], 'motivo': motivo_auto, 'confianza': 'alta', 'fuente': 'regla'})
-            print(f"  x AUTO [{listing['colonia']}] ${listing.get('precio_mxn',0):,.0f} - {motivo_auto[:60]}")
+            confirmados_error.append({
+                'id': listing['id'], 'motivo': motivo_auto,
+                'confianza': 'alta', 'fuente': 'regla',
+                'precio_corregido': None, 'desactivar': True
+            })
+            print(f"  x AUTO [{listing.get('colonia','')}] ${precio_actual:,.0f} — {motivo_auto[:60]}")
             continue
 
         if 'colonia_pin_mismatch' in reglas:
             col_implan = _get_colonia_implan(listing.get('lat'), listing.get('lng')) or '?'
-            print(f"  ! COLONIA [{listing['colonia']}] -> IMPLAN: [{col_implan}]")
+            print(f"  ! COLONIA [{listing.get('colonia','')}] -> IMPLAN: [{col_implan}]")
 
         if args.ia:
-            print(f"  ? IA [{listing['colonia']}] ${listing.get('precio_mxn',0):,.0f}")
+            print(f"  ? IA [{listing.get('colonia','')}] ${precio_actual:,.0f}")
             resultado = validar_con_ia(listing)
             time.sleep(0.3)
+            precio_corregido = resultado.get('precio_corregido')
             if resultado.get('es_error') and resultado.get('confianza') in ('alta', 'media'):
-                confirmados_error.append({'id': listing['id'], 'motivo': resultado.get('motivo', motivo_auto), 'confianza': resultado.get('confianza', 'media'), 'fuente': 'ia'})
-                print(f"    → ERROR: {resultado.get('motivo','')[:60]}")
+                confirmados_error.append({
+                    'id': listing['id'],
+                    'motivo': resultado.get('motivo', motivo_auto),
+                    'confianza': resultado.get('confianza', 'media'),
+                    'fuente': 'ia',
+                    'precio_corregido': precio_corregido,
+                    'desactivar': resultado.get('confianza') == 'alta' and not precio_corregido,
+                })
+                corr_txt = f" → precio corregido: ${precio_corregido:,.0f}" if precio_corregido else ""
+                print(f"    → ERROR {resultado.get('confianza','')}: {resultado.get('motivo','')[:60]}{corr_txt}")
             else:
                 falsos_positivos.append(listing['id'])
                 print(f"    → OK: {resultado.get('motivo','')[:60]}")
         else:
-            confirmados_error.append({'id': listing['id'], 'motivo': motivo_auto, 'confianza': 'pendiente_revision', 'fuente': 'regla'})
+            confirmados_error.append({
+                'id': listing['id'], 'motivo': motivo_auto,
+                'confianza': 'pendiente_revision', 'fuente': 'regla',
+                'precio_corregido': None, 'desactivar': False
+            })
 
-    print(f"\n  Errores confirmados: {len(confirmados_error)} | Falsos positivos IA: {len(falsos_positivos)}")
+    corregidos = [e for e in confirmados_error if e.get('precio_corregido')]
+    desactivados = [e for e in confirmados_error if e.get('desactivar')]
+    print(f"\n  Errores confirmados: {len(confirmados_error)} | Precios corregidos: {len(corregidos)} | Desactivados: {len(desactivados)} | Falsos positivos: {len(falsos_positivos)}")
 
     if not args.reporte and confirmados_error:
         print(f"\n  Actualizando DB...")
         for item in confirmados_error:
-            sb.table('listings').update({
-                'alerta_precio_anomalo': True,
-                'activo': False if item['confianza'] == 'alta' else True,
-            }).eq('id', item['id']).execute()
+            update = {'alerta_precio_anomalo': True}
+            if item.get('desactivar'):
+                update['activo'] = False
+            if item.get('precio_corregido'):
+                update['precio_mxn'] = item['precio_corregido']
+                update['editado_manualmente'] = True
+                update['notas_editor'] = f"Precio corregido por auditoria IA ({item['fuente']}): {item['motivo'][:120]}"
+                import datetime
+                update['fecha_edicion'] = datetime.datetime.utcnow().isoformat()
+            sb.table('listings').update(update).eq('id', item['id']).execute()
         for lid in falsos_positivos:
             sb.table('listings').update({'alerta_precio_anomalo': False}).eq('id', lid).execute()
 
