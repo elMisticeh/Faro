@@ -1,18 +1,16 @@
-name: Scrape semanal — Real Estate Torreón
+name: Scrape semanal
 
 on:
-  # Cada lunes 8:00 UTC = 3:00am CDT / 2:00am CST
   schedule:
     - cron: '0 8 * * 1'
-  # También se puede disparar manualmente desde GitHub → Actions → Run workflow
   workflow_dispatch:
     inputs:
       portal:
-        description: 'Portal a scrapear (todos|i24|remax|ml|prop)'
+        description: 'Portal (todos|i24|remax|ml|prop)'
         required: false
         default: 'todos'
       skip_ia:
-        description: 'Omitir llamadas a IA (true/false)'
+        description: 'Omitir IA (true/false)'
         required: false
         default: 'false'
 
@@ -23,10 +21,10 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout del repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Python 3.11
+      - name: Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -35,33 +33,30 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Instalar Playwright y Chromium
+      - name: Instalar Playwright
         run: |
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Correr pipeline completo
+      - name: Correr pipeline
         env:
-          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Inputs via env para evitar shell injection — nunca interpolar ${{ }} directo en run
-          GHA_PORTAL:   ${{ github.event.inputs.portal || 'todos' }}
-          GHA_SKIP_IA:  ${{ github.event.inputs.skip_ia || 'false' }}
+          GHA_PORTAL: ${{ github.event.inputs.portal || 'todos' }}
+          GHA_SKIP_IA: ${{ github.event.inputs.skip_ia || 'false' }}
         run: |
-          # Whitelist estricto de valores permitidos
           case "$GHA_PORTAL" in
             todos|i24|viva|lamudi|icasas|mc|prop|trovit|ml|remax) ;;
-            *) echo "ERROR: portal '$GHA_PORTAL' no permitido"; exit 1 ;;
+            *) echo "ERROR: portal no permitido"; exit 1 ;;
           esac
-
           if [ "$GHA_SKIP_IA" = "true" ]; then
             python run.py full --skip-ia
           else
             python run.py full
           fi
 
-      - name: Subir log de ejecución como artefacto
+      - name: Subir log
         if: always()
         uses: actions/upload-artifact@v4
         with:
