@@ -179,7 +179,7 @@ function generateReporte() {
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Reporte CAMPO — ${title}</title>
+<title>Reporte FARO — ${title}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -337,7 +337,7 @@ function generateReporte() {
 <div class="page">
   <div class="page-header">
     <div>
-      <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+      <div class="logo-mark">FARO <em>· COEZA</em></div>
       <div style="font-size:7.5pt;color:#888;margin-top:2px">Inteligencia Inmobiliaria</div>
     </div>
     <div class="report-meta">
@@ -349,7 +349,7 @@ function generateReporte() {
   </div>
 
   <div class="cover-hero">
-    <div class="cover-subtitle">CAMPO · Análisis Sociodemográfico</div>
+    <div class="cover-subtitle">FARO · Análisis Sociodemográfico</div>
     <div class="cover-title">${title}</div>
     <div class="cover-meta">${subtitle} · Generado ${today}</div>
 
@@ -397,7 +397,7 @@ function generateReporte() {
   </div>
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting</span>
+    <span>FARO · COEZA Consulting</span>
     <span>Pág. 1</span>
   </div>
 </div>
@@ -405,10 +405,10 @@ function generateReporte() {
 <!-- ===== PAGE 2: PANORAMA DE ZONA ===== -->
 <div class="page">
   <div class="page-header">
-    <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+    <div class="logo-mark">FARO <em>· COEZA</em></div>
     <div class="report-meta">
       <strong>${title}</strong><br>
-      CAMPO · Análisis de Zona · ${today}
+      FARO · Análisis de Zona · ${today}
     </div>
   </div>
 
@@ -482,7 +482,7 @@ function generateReporte() {
   </div>`).join('')}
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting · Censo 2020 · INEGI</span>
+    <span>FARO · COEZA Consulting · Censo 2020 · INEGI</span>
     <span>Pág. 2</span>
   </div>
 </div>
@@ -490,10 +490,10 @@ function generateReporte() {
 <!-- ===== PAGE 3: CRECIMIENTO COMPARATIVO ===== -->
 <div class="page">
   <div class="page-header">
-    <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+    <div class="logo-mark">FARO <em>· COEZA</em></div>
     <div class="report-meta">
       <strong>${title}</strong><br>
-      CAMPO · Análisis de Zona · ${today}
+      FARO · Análisis de Zona · ${today}
     </div>
   </div>
 
@@ -566,7 +566,7 @@ function generateReporte() {
   </div>
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting · Censo 2020 · INEGI</span>
+    <span>FARO · COEZA Consulting · Censo 2020 · INEGI</span>
     <span>Pág. 3</span>
   </div>
 </div>
@@ -574,10 +574,10 @@ function generateReporte() {
 <!-- ===== PAGE 4: ESTRUCTURA DE EDAD + HABITACIONAL ===== -->
 <div class="page">
   <div class="page-header">
-    <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+    <div class="logo-mark">FARO <em>· COEZA</em></div>
     <div class="report-meta">
       <strong>${title}</strong><br>
-      CAMPO · Análisis de Zona · ${today}
+      FARO · Análisis de Zona · ${today}
     </div>
   </div>
 
@@ -692,7 +692,7 @@ function generateReporte() {
   </div>
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting · Censo 2020 · INEGI</span>
+    <span>FARO · COEZA Consulting · Censo 2020 · INEGI</span>
     <span>Pág. 4</span>
   </div>
 </div>
@@ -700,10 +700,10 @@ function generateReporte() {
 <!-- ===== PAGE 5: ACTIVIDAD ECONÓMICA + NSE ===== -->
 <div class="page">
   <div class="page-header">
-    <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+    <div class="logo-mark">FARO <em>· COEZA</em></div>
     <div class="report-meta">
       <strong>${title}</strong><br>
-      CAMPO · Análisis de Zona · ${today}
+      FARO · Análisis de Zona · ${today}
     </div>
   </div>
 
@@ -819,7 +819,7 @@ function generateReporte() {
   </div>
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting · Censo 2020 · INEGI · AMAI 2018</span>
+    <span>FARO · COEZA Consulting · Censo 2020 · INEGI · AMAI 2018</span>
     <span>Pág. 5</span>
   </div>
 </div>
@@ -827,10 +827,10 @@ function generateReporte() {
 <!-- ===== PAGE 6: CONCLUSIONES ===== -->
 <div class="page">
   <div class="page-header">
-    <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+    <div class="logo-mark">FARO <em>· COEZA</em></div>
     <div class="report-meta">
       <strong>${title}</strong><br>
-      CAMPO · Análisis de Zona · ${today}
+      FARO · Análisis de Zona · ${today}
     </div>
   </div>
 
@@ -905,7 +905,7 @@ function generateReporte() {
   </div>
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting · Censo 2020 · INEGI</span>
+    <span>FARO · COEZA Consulting · Censo 2020 · INEGI</span>
     <span>Pág. 6</span>
   </div>
 </div>
@@ -913,16 +913,16 @@ function generateReporte() {
 <!-- ===== PAGE 7: RECOMENDACIONES ===== -->
 <div class="page">
   <div class="page-header">
-    <div class="logo-mark">CAMPO <em>· COEZA</em></div>
+    <div class="logo-mark">FARO <em>· COEZA</em></div>
     <div class="report-meta">
       <strong>${title}</strong><br>
-      CAMPO · Análisis de Zona · ${today}
+      FARO · Análisis de Zona · ${today}
     </div>
   </div>
 
   <div class="section-label">Estrategia</div>
   <div class="section-title">Recomendaciones Estratégicas</div>
-  <div class="section-sub">Basadas en análisis INEGI 2020 · AMAI 2018 · Metodología CAMPO</div>
+  <div class="section-sub">Basadas en análisis INEGI 2020 · AMAI 2018 · Metodología FARO</div>
 
   <div class="persona-card" style="margin-bottom:5mm">
     <div class="persona-title">Buyer Persona · Perfil Definitivo</div>
@@ -971,12 +971,12 @@ function generateReporte() {
   </div>
 
   <div style="margin-top:auto;padding-top:5mm;border-top:1px solid #eaeff8;font-size:7.5pt;color:#aaa;line-height:1.7">
-    <strong>Fuentes de Datos:</strong> Censo de Población y Vivienda 2020, INEGI · Clasificación NSE AMAI 2018 · Proyecciones de Crecimiento CONAPO · Análisis CAMPO, COEZA Consulting.<br>
+    <strong>Fuentes de Datos:</strong> Censo de Población y Vivienda 2020, INEGI · Clasificación NSE AMAI 2018 · Proyecciones de Crecimiento CONAPO · Análisis FARO, COEZA Consulting.<br>
     <strong>Metodología:</strong> Score de Zona calculado con 5 dimensiones ponderadas: crecimiento poblacional, cohorte compradora 25–59 años, ocupación habitacional, actividad económica (PEA) y concentración NSE medio-alto. Máximo 10 puntos. Ver Mind de Mercado COEZA v2.2 para metodología completa.
   </div>
 
   <div class="page-footer">
-    <span>CAMPO · COEZA Consulting · Inteligencia Inmobiliaria</span>
+    <span>FARO · COEZA Consulting · Inteligencia Inmobiliaria</span>
     <span>Pág. 7 de 7</span>
   </div>
 </div>

@@ -1,9 +1,16 @@
-# CAMPO — Changelog
+# FARO — Changelog
+
+## v2.1.0 — 2026-05-30
+
+### Changed
+- App renamed from **CAMPO** to **FARO**
+
+---
 
 ## v2.0.0 — 2026-05-26
 
 ### Breaking changes
-- App renamed from "Torreón RE Dashboard" to **CAMPO**
+- App renamed from "Torreón RE Dashboard" to **CAMPO** (ahora FARO)
 - Tab structure reorganized: 4 flat tabs → 2 main tabs (Mercado / Demografía)
 
 ### Added
@@ -22,7 +29,7 @@
 - Tab Mercado agrupa Lista + Mapa + Validación como sub-tabs
 - Botones: fondo accent ahora texto blanco (AirDNA spec)
 - Scrollbars: estilo custom sutil
-- Logo: "CAMPO · Torreón" con separador en muted
+- Logo: "FARO · Torreón" con separador en muted
 
 ### Fixed
 - IMPLAN: `inSR=4326` obligatorio para queries lat/lng (devolvía 0 features sin él)

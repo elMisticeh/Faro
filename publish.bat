@@ -1,6 +1,6 @@
 @echo off
 echo.
-echo  CAMPO — Publicar nueva version
+echo  FARO — Publicar nueva version
 echo  ================================
 
 REM Copia frontend a docs (GitHub Pages)

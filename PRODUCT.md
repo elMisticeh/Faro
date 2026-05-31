@@ -1,7 +1,7 @@
 # PRODUCT.md
 
 ## Product
-CAMPO — Plataforma de inteligencia de mercado inmobiliario para Torreón, Coahuila.
+FARO — Plataforma de inteligencia de mercado inmobiliario para Torreón, Coahuila.
 
 ## Purpose
 Enable real estate analysts at COEZA to explore property listings and demographic zone data together, connecting scraped market data with INEGI census data to inform investment and product strategy.
