@@ -4,31 +4,32 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FARO · Inteligencia Inmobiliaria</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Mulish:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js"></script>
 <style>
 :root {
-  /* FARO — AirDNA Light Mode */
-  --bg:         oklch(98.2% 0.007 264);
-  --surface:    oklch(99.8% 0.003 264);
-  --surface2:   oklch(94.8% 0.013 264);
-  --border:     oklch(87.5% 0.015 264);
-  --text:       oklch(14.0% 0.015 264);
-  --muted:      oklch(50.0% 0.018 264);
-  --accent:     oklch(30.0% 0.270 264);
-  --accent-dim: oklch(93.5% 0.032 264);
-  --accent2:    oklch(46.0% 0.220 264);
+  /* FARO — VERTICE Family · Cream / Gold */
+  --bg:         oklch(97.5% 0.008 72);
+  --surface:    oklch(99.0% 0.004 72);
+  --surface2:   oklch(93.8% 0.016 68);
+  --border:     oklch(87.0% 0.018 68);
+  --text:       oklch(12.5% 0.018 72);
+  --muted:      oklch(52.0% 0.015 70);
+  --accent:     #C8A24B;
+  --accent-dim: oklch(94.0% 0.038 73);
+  --accent2:    oklch(58.0% 0.110 73);
   --accent3:    oklch(51.0% 0.220  25);
   --success:    oklch(50.0% 0.170 142);
   --warning:    oklch(65.0% 0.160  65);
-  --font:       'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --mono:       'DM Mono', 'Cascadia Code', monospace;
+  --font:         'Mulish', system-ui, sans-serif;
+  --font-display: 'Barlow Semi Condensed', system-ui, sans-serif;
+  --mono:         'IBM Plex Mono', ui-monospace, monospace;
   --radius:     8px;
   --radius-sm:  5px;
-  --shadow-sm:  0 1px 3px oklch(14% 0.015 264 / 0.08), 0 1px 2px oklch(14% 0.015 264 / 0.04);
-  --shadow:     0 4px 16px oklch(14% 0.015 264 / 0.10);
+  --shadow-sm:  0 1px 3px oklch(12% 0.018 72 / 0.07), 0 1px 2px oklch(12% 0.018 72 / 0.04);
+  --shadow:     0 4px 16px oklch(12% 0.018 72 / 0.09);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
@@ -41,9 +42,40 @@ header{
   background:var(--surface);z-index:100;position:sticky;top:0;
   box-shadow:var(--shadow-sm);
 }
-.logo{font-size:15px;font-weight:700;letter-spacing:-.03em;color:var(--text);display:flex;align-items:center;gap:8px}
-.logo em{font-style:normal;color:var(--muted);font-weight:400;font-size:13px}
 .version-tag{background:var(--accent-dim);color:var(--accent);border:1px solid oklch(85% 0.055 264);padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em;font-family:var(--mono)}
+/* Logo */
+.logo{font-size:15px;font-weight:600;letter-spacing:-.01em;color:var(--text);display:flex;align-items:center;gap:10px;cursor:default}
+.logo-mark{display:flex;align-items:center;color:var(--accent);flex-shrink:0;width:26px;height:26px}
+.logo-word b{font-family:var(--font-display);font-weight:700;font-size:1.1rem;letter-spacing:.02em}
+.logo-word em{font-style:normal;color:var(--muted);font-weight:400;font-size:12px;margin-left:2px}
+/* Eyebrow utility */
+.eyebrow{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)}
+/* Logo picker */
+.logo-picker{display:none;position:absolute;top:58px;left:16px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);gap:12px;flex-direction:column}
+.logo-picker.open{display:flex}
+.logo-picker-title{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.logo-options{display:flex;gap:10px}
+.logo-opt{width:52px;height:52px;border:1.5px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);transition:border-color .15s,color .15s}
+.logo-opt:hover,.logo-opt.active{border-color:var(--accent);color:var(--accent)}
+.logo-opt svg{width:28px;height:28px}
+/* Onboarding modal */
+.onboarding-overlay{display:none;position:fixed;inset:0;background:oklch(12% 0.018 72 / 0.6);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.onboarding-overlay.open{display:flex}
+.onboarding-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:600px;max-width:92vw;max-height:88vh;overflow:hidden;box-shadow:0 24px 64px oklch(12% 0.018 72 / 0.18);display:flex;flex-direction:column}
+.ob-header{padding:28px 32px 0;border-bottom:none}
+.ob-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.ob-title{font-family:var(--font-display);font-size:1.9rem;font-weight:700;letter-spacing:.01em;color:var(--text);line-height:1.05;margin-bottom:6px}
+.ob-subtitle{font-size:13px;color:var(--muted);line-height:1.5}
+.ob-rule{height:1px;background:linear-gradient(90deg,var(--accent) 0%,transparent 100%);opacity:.4;margin:20px 32px 0}
+.ob-steps{padding:20px 32px;display:grid;grid-template-columns:1fr 1fr;gap:14px;flex:1}
+.ob-step{display:flex;gap:12px;align-items:flex-start}
+.ob-step-num{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:500;letter-spacing:.05em;flex-shrink:0;padding-top:1px}
+.ob-step-title{font-family:var(--font-display);font-size:.95rem;font-weight:600;color:var(--text);margin-bottom:3px}
+.ob-step-desc{font-size:12px;color:var(--muted);line-height:1.5}
+.ob-footer{padding:16px 32px 24px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border)}
+.ob-footer-note{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.05em}
+.ob-btn{background:var(--accent);color:#1a1000;border:none;padding:10px 28px;border-radius:7px;font-family:var(--font-display);font-size:.95rem;font-weight:700;letter-spacing:.04em;cursor:pointer;transition:opacity .15s}
+.ob-btn:hover{opacity:.85}
 .header-meta{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:14px}
 #last-update{color:var(--accent2);font-weight:500}
 
@@ -52,7 +84,7 @@ header{
 .stat{padding:13px 20px 15px;display:flex;flex-direction:column;gap:4px;border-right:1px solid var(--border)}
 .stat:last-child{border-right:none}
 .stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
-.stat-value{font-size:22px;font-weight:700;font-family:var(--mono);color:var(--text);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat-value{font-size:22px;font-weight:700;font-family:var(--mono);color:var(--text);letter-spacing:-.02em;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 .stat-value.green{color:var(--success)}
 .stat-value.blue{color:var(--accent2)}
 .stat-value.accent{color:var(--accent)}
@@ -373,7 +405,10 @@ a.link-ext:hover{text-decoration:underline}
 <body>
 
 <header>
-  <div class="logo">FARO <em>· Torreón</em></div>
+  <div class="logo" id="faro-logo" onclick="if(event.altKey)toggleLogoPicker()" title="Alt+clic para cambiar logo">
+    <span class="logo-mark" id="logo-svg-container"></span>
+    <span class="logo-word"><b>FARO</b> <em>· Torreón</em></span>
+  </div>
   <div class="header-meta" style="display:flex;align-items:center;gap:16px"><span class="version-tag">v2.0</span>Última actualización: <span id="last-update">—</span></div>
 </header>
 
@@ -1869,6 +1904,70 @@ async function inicializarBadge() {
     badge.style.display = 'inline';
   }
 }
+
+
+// ── LOGO SELECTOR ─────────────────────────────────────────────────────────────
+const LOGO_SVGS = {"sector": "<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 25 L7 9 A16 16 0 0 1 23 25 Z"/></svg>", "meridian": "<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="16" y1="3" x2="16" y2="12"/><line x1="16" y1="20" x2="16" y2="29"/><line x1="3" y1="16" x2="12" y2="16"/><line x1="20" y1="16" x2="29" y2="16"/><circle cx="16" cy="16" r="3.5" fill="currentColor" stroke="none"/></svg>", "beacon": "<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="16" cy="7" r="3" fill="currentColor" stroke="none"/><line x1="16" y1="10" x2="16" y2="28" stroke-width="1.8"/><line x1="16" y1="17" x2="7" y2="28" stroke-width="1.2" opacity="0.45"/><line x1="16" y1="17" x2="25" y2="28" stroke-width="1.2" opacity="0.45"/></svg>", "pivot": "<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9.5" y="9.5" width="13" height="13" transform="rotate(45 16 16)"/><circle cx="16" cy="16" r="2.2" fill="currentColor" stroke="none"/></svg>"};
+const LOGO_NAMES = { sector: 'Sector', meridian: 'Meridian', beacon: 'Beacon', pivot: 'Pivot' };
+
+function getActiveLogo() {
+  return localStorage.getItem('faro_logo') || 'beacon';
+}
+
+function setLogo(key) {
+  localStorage.setItem('faro_logo', key);
+  document.getElementById('logo-svg-container').innerHTML = LOGO_SVGS[key];
+  document.querySelectorAll('.logo-opt').forEach(el => {
+    el.classList.toggle('active', el.dataset.logo === key);
+  });
+}
+
+function toggleLogoPicker() {
+  const picker = document.getElementById('logo-picker');
+  if (!picker) return;
+  picker.classList.toggle('open');
+}
+
+function renderLogoPicker() {
+  const current = getActiveLogo();
+  const pickerHTML = `<div class="logo-picker" id="logo-picker">
+    <div class="logo-picker-title">Marca FARO</div>
+    <div class="logo-options">
+      ${Object.entries(LOGO_SVGS).map(([k,svg]) =>
+        `<div class="logo-opt ${k===current?'active':''}" data-logo="${k}" title="${LOGO_NAMES[k]||k}" onclick="setLogo('${k}');toggleLogoPicker()">${svg}</div>`
+      ).join('')}
+    </div>
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:2px">Alt+clic en el logo para cambiar</div>
+  </div>`;
+  document.querySelector('header').insertAdjacentHTML('beforeend', pickerHTML);
+}
+
+// ── ONBOARDING ─────────────────────────────────────────────────────────────────
+function cerrarOnboarding() {
+  document.getElementById('onboarding-overlay').classList.remove('open');
+  localStorage.setItem('faro_onboarding_done', '1');
+}
+
+function initOnboarding() {
+  const done = localStorage.getItem('faro_onboarding_done');
+  if (!done) {
+    document.getElementById('onboarding-overlay').classList.add('open');
+  }
+}
+
+// Init logo + onboarding
+document.addEventListener('DOMContentLoaded', () => {
+  renderLogoPicker();
+  setLogo(getActiveLogo());
+  initOnboarding();
+  // Close picker on outside click
+  document.addEventListener('click', e => {
+    const picker = document.getElementById('logo-picker');
+    if (picker && !picker.contains(e.target) && !document.getElementById('faro-logo').contains(e.target)) {
+      picker.classList.remove('open');
+    }
+  });
+});
 
 // Init
 if (SUPABASE_URL && SUPABASE_KEY) {
