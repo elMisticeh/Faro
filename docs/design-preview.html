@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FARO — Design Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&family=DM+Mono:wght@400;500&family=Sora:wght@300;400;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:#09090b;color:#fafafa;font-family:'DM Sans',system-ui,sans-serif;min-height:100vh}
+
+/* NAV */
+.nav{position:sticky;top:0;z-index:100;background:rgba(9,9,11,.85);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.08);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between}
+.nav-brand{font-size:13px;font-weight:700;letter-spacing:.06em;color:#fafafa}
+.nav-hint{font-size:11px;color:#71717a;font-family:'DM Mono',monospace}
+
+/* HERO */
+.hero{padding:60px 24px 40px;text-align:center;max-width:680px;margin:0 auto}
+.hero-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#71717a;margin-bottom:14px}
+.hero-title{font-size:clamp(2rem,5vw,3rem);font-weight:700;line-height:1.06;margin-bottom:14px;letter-spacing:-.02em}
+.hero-sub{font-size:15px;color:#a1a1aa;line-height:1.6}
+
+/* SECTION */
+.section{padding:60px 0}
+.section-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#71717a;text-align:center;margin-bottom:10px}
+.section-title{font-size:1.4rem;font-weight:700;text-align:center;margin-bottom:40px;letter-spacing:-.01em}
+
+/* PALETTE GRID */
+.palettes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;max-width:1200px;margin:0 auto;padding:0 24px}
+
+/* PALETTE CARD */
+.pal-card{border-radius:16px;overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s;border:2px solid transparent}
+.pal-card:hover{transform:translateY(-4px)}
+.pal-card.selected{border-color:#3b82f6}
+.pal-preview{padding:20px;min-height:200px;position:relative;overflow:hidden}
+.pal-mini-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding:8px 12px;border-radius:8px;backdrop-filter:blur(4px)}
+.pal-mini-logo{font-size:11px;font-weight:700;letter-spacing:.06em}
+.pal-mini-dot{width:6px;height:6px;border-radius:50%}
+.pal-mini-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.pal-mini-stat{padding:8px;border-radius:6px}
+.pal-mini-val{font-family:'DM Mono',monospace;font-size:14px;font-weight:700;margin-bottom:2px}
+.pal-mini-lbl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.5}
+.pal-mini-bar{height:3px;border-radius:2px;margin-bottom:6px;opacity:.4}
+.pal-mini-card{padding:10px 12px;border-radius:8px}
+.pal-mini-card-title{font-size:10px;font-weight:600;margin-bottom:3px}
+.pal-mini-card-sub{font-size:9px;opacity:.5}
+.pal-meta{padding:16px 20px;border-top:1px solid rgba(255,255,255,.06)}
+.pal-name{font-weight:700;font-size:1rem;margin-bottom:4px}
+.pal-desc{font-size:12px;color:#71717a;line-height:1.5;margin-bottom:10px}
+.pal-swatches{display:flex;gap:6px;margin-bottom:8px}
+.swatch{width:24px;height:24px;border-radius:50%;border:1px solid rgba(255,255,255,.1)}
+.pal-fonts{font-size:11px;color:#52525b;font-family:'DM Mono',monospace}
+
+/* LOGOS SECTION */
+.logos-wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+.logo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.logo-card{background:#111113;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;cursor:pointer;transition:border-color .15s,background .15s}
+.logo-card:hover{border-color:#3b82f6;background:#0f1117}
+.logo-card-name{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#71717a}
+.logo-card-desc{font-size:12px;color:#52525b;text-align:center;line-height:1.4}
+.logo-mark{width:52px;height:52px;display:flex;align-items:center;justify-content:center}
+
+/* TYPO SECTION */
+.typo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;max-width:1000px;margin:0 auto;padding:0 24px}
+.typo-card{background:#111113;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:24px}
+.typo-sample-big{font-size:2rem;font-weight:700;margin-bottom:4px;line-height:1.1}
+.typo-sample-body{font-size:13px;line-height:1.6;color:#a1a1aa;margin-bottom:12px}
+.typo-mono{font-family:'DM Mono',monospace;font-size:11px;color:#71717a}
+.typo-pair{font-size:11px;color:#3b82f6;font-family:'DM Mono',monospace;margin-top:8px;letter-spacing:.1em}
+
+/* DIVIDER */
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);margin:0 24px}
+
+/* CTA */
+.cta{text-align:center;padding:60px 24px}
+.cta p{color:#71717a;font-size:13px;margin-bottom:6px}
+
+/* ═══════════════════════════════════════════════════════
+   PALETTE STYLES
+═══════════════════════════════════════════════════════ */
+
+/* APEX: near-black + electric blue */
+.apex .pal-preview{background:#08090f}
+.apex .pal-mini-header{background:rgba(255,255,255,.04)}
+.apex .pal-mini-logo{color:#f1f5f9}
+.apex .pal-mini-dot{background:#3b82f6}
+.apex .pal-mini-stat{background:rgba(255,255,255,.04)}
+.apex .pal-mini-val{color:#f1f5f9}
+.apex .pal-mini-bar{background:#3b82f6}
+.apex .pal-mini-card{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.25)}
+.apex .pal-mini-card-title{color:#93c5fd}
+.apex .pal-meta{background:#0e1117;border-color:rgba(255,255,255,.06)}
+.apex .pal-name{color:#f1f5f9}
+
+/* VOID: charcoal + vivid violet */
+.void .pal-preview{background:#09080e}
+.void .pal-mini-header{background:rgba(255,255,255,.05)}
+.void .pal-mini-logo{color:#fafafa}
+.void .pal-mini-dot{background:#a855f7}
+.void .pal-mini-stat{background:rgba(255,255,255,.04)}
+.void .pal-mini-val{color:#fafafa}
+.void .pal-mini-bar{background:#a855f7}
+.void .pal-mini-card{background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.25)}
+.void .pal-mini-card-title{color:#d8b4fe}
+.void .pal-meta{background:#120f1a;border-color:rgba(255,255,255,.06)}
+.void .pal-name{color:#fafafa}
+
+/* GRID: pure white + emerald + near-black */
+.grid-pal .pal-preview{background:#f0f2f5}
+.grid-pal .pal-mini-header{background:#ffffff;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.grid-pal .pal-mini-logo{color:#0d1117}
+.grid-pal .pal-mini-dot{background:#10b981}
+.grid-pal .pal-mini-stat{background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.grid-pal .pal-mini-val{color:#0d1117}
+.grid-pal .pal-mini-lbl{color:#6b7280}
+.grid-pal .pal-mini-bar{background:#10b981}
+.grid-pal .pal-mini-card{background:#ecfdf5;border:1px solid #a7f3d0}
+.grid-pal .pal-mini-card-title{color:#065f46}
+.grid-pal .pal-mini-card-sub{color:#6b7280}
+.grid-pal .pal-meta{background:#ffffff;border-color:rgba(0,0,0,.08)}
+.grid-pal .pal-name{color:#0d1117}
+.grid-pal .pal-desc{color:#6b7280}
+.grid-pal .pal-fonts{color:#9ca3af}
+
+/* FORGE: dark + vivid amber */
+.forge .pal-preview{background:#111318}
+.forge .pal-mini-header{background:rgba(255,255,255,.04)}
+.forge .pal-mini-logo{color:#f5f5f4;font-family:'Space Mono',monospace}
+.forge .pal-mini-dot{background:#f59e0b}
+.forge .pal-mini-stat{background:rgba(255,255,255,.03)}
+.forge .pal-mini-val{color:#f5f5f4;font-family:'Space Mono',monospace}
+.forge .pal-mini-bar{background:#f59e0b}
+.forge .pal-mini-card{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2)}
+.forge .pal-mini-card-title{color:#fcd34d}
+.forge .pal-meta{background:#18191f;border-color:rgba(255,255,255,.06)}
+.forge .pal-name{color:#f5f5f4}
+
+/* ═══════════════════════════════════════════════════════
+   LOGO SVG COLORS
+═══════════════════════════════════════════════════════ */
+.logo-svg{color:#3b82f6}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <span class="nav-brand">FARO · Design Preview</span>
+  <span class="nav-hint">elige tu estilo</span>
+</nav>
+
+<div class="hero">
+  <div class="hero-label">FARO v5 — Design System</div>
+  <h1 class="hero-title">Elige el look<br>de la plataforma</h1>
+  <p class="hero-sub">4 direcciones de diseño, 4 opciones de logo, 4 pares de tipografía. Sin crema, sin beige.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     PALETTES
+═══════════════════════════════════════════════════════ -->
+<section class="section">
+  <div class="section-label">Dirección visual</div>
+  <h2 class="section-title">Paletas de color</h2>
+  <div class="palettes">
+
+    <!-- APEX -->
+    <div class="pal-card apex">
+      <div class="pal-preview">
+        <div class="pal-mini-header">
+          <span class="pal-mini-logo" style="font-family:'DM Sans',sans-serif">FARO</span>
+          <span class="pal-mini-dot"></span>
+        </div>
+        <div class="pal-mini-stats">
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#3b82f6">2,357</div><div class="pal-mini-lbl" style="color:#475569">Activos</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val">$4.2M</div><div class="pal-mini-lbl">Mediana</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#22c55e">8.2</div><div class="pal-mini-lbl">Score</div></div>
+        </div>
+        <div class="pal-mini-bar" style="background:#3b82f6;width:65%;opacity:1"></div>
+        <div class="pal-mini-bar" style="background:#3b82f6;width:42%;opacity:.6"></div>
+        <div class="pal-mini-bar" style="background:#3b82f6;width:78%;opacity:.35"></div>
+        <div class="pal-mini-card" style="margin-top:10px">
+          <div class="pal-mini-card-title" style="font-family:'DM Sans',sans-serif">Villas del Renacimiento · $3.8M</div>
+          <div class="pal-mini-card-sub">terreno · 450m² · RE/MAX</div>
+        </div>
+      </div>
+      <div class="pal-meta">
+        <div class="pal-name">01 — APEX</div>
+        <div class="pal-desc">Negro profundo con azul eléctrico. El look de las mejores SaaS del mundo: Linear, Raycast, Vercel. Ultra premium.</div>
+        <div class="pal-swatches">
+          <div class="swatch" style="background:#08090f"></div>
+          <div class="swatch" style="background:#0e1117"></div>
+          <div class="swatch" style="background:#1e293b"></div>
+          <div class="swatch" style="background:#3b82f6"></div>
+          <div class="swatch" style="background:#93c5fd"></div>
+          <div class="swatch" style="background:#f1f5f9"></div>
+        </div>
+        <div class="pal-fonts">DM Sans · DM Mono</div>
+      </div>
+    </div>
+
+    <!-- VOID -->
+    <div class="pal-card void">
+      <div class="pal-preview">
+        <div class="pal-mini-header">
+          <span class="pal-mini-logo" style="font-family:'Sora',sans-serif">FARO</span>
+          <span class="pal-mini-dot"></span>
+        </div>
+        <div class="pal-mini-stats">
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#a855f7">2,357</div><div class="pal-mini-lbl">Activos</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val">$4.2M</div><div class="pal-mini-lbl">Mediana</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#34d399">8.2</div><div class="pal-mini-lbl">Score</div></div>
+        </div>
+        <div class="pal-mini-bar" style="background:#a855f7;width:65%;opacity:1"></div>
+        <div class="pal-mini-bar" style="background:#a855f7;width:42%;opacity:.6"></div>
+        <div class="pal-mini-bar" style="background:#a855f7;width:78%;opacity:.35"></div>
+        <div class="pal-mini-card" style="margin-top:10px">
+          <div class="pal-mini-card-title" style="font-family:'Sora',sans-serif">Villas del Renacimiento · $3.8M</div>
+          <div class="pal-mini-card-sub">terreno · 450m² · RE/MAX</div>
+        </div>
+      </div>
+      <div class="pal-meta">
+        <div class="pal-name">02 — VOID</div>
+        <div class="pal-desc">Negro absoluto con violeta vivo. Más audaz, más editorial. Para destacar frente a cualquier competidor en sala.</div>
+        <div class="pal-swatches">
+          <div class="swatch" style="background:#09080e"></div>
+          <div class="swatch" style="background:#120f1a"></div>
+          <div class="swatch" style="background:#1e1a2e"></div>
+          <div class="swatch" style="background:#a855f7"></div>
+          <div class="swatch" style="background:#d8b4fe"></div>
+          <div class="swatch" style="background:#fafafa"></div>
+        </div>
+        <div class="pal-fonts">Sora · Space Mono</div>
+      </div>
+    </div>
+
+    <!-- GRID -->
+    <div class="pal-card grid-pal">
+      <div class="pal-preview">
+        <div class="pal-mini-header">
+          <span class="pal-mini-logo" style="font-family:'Inter',sans-serif;color:#0d1117">FARO</span>
+          <span class="pal-mini-dot"></span>
+        </div>
+        <div class="pal-mini-stats">
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#10b981;font-family:'Inter',sans-serif">2,357</div><div class="pal-mini-lbl">Activos</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="font-family:'Inter',sans-serif;color:#0d1117">$4.2M</div><div class="pal-mini-lbl">Mediana</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="font-family:'Inter',sans-serif;color:#0d1117">8.2</div><div class="pal-mini-lbl">Score</div></div>
+        </div>
+        <div class="pal-mini-bar" style="background:#10b981;width:65%;opacity:1"></div>
+        <div class="pal-mini-bar" style="background:#0d1117;width:42%;opacity:.2"></div>
+        <div class="pal-mini-bar" style="background:#10b981;width:78%;opacity:.5"></div>
+        <div class="pal-mini-card" style="margin-top:10px">
+          <div class="pal-mini-card-title" style="color:#065f46;font-family:'Inter',sans-serif">Villas del Renacimiento · $3.8M</div>
+          <div class="pal-mini-card-sub" style="color:#6b7280">terreno · 450m² · RE/MAX</div>
+        </div>
+      </div>
+      <div class="pal-meta">
+        <div class="pal-name">03 — GRID</div>
+        <div class="pal-desc">Blanco puro con verde esmeralda. El look de Stripe, Notion. Light mode sin beige. Legible, limpio, Silicon Valley.</div>
+        <div class="pal-swatches">
+          <div class="swatch" style="background:#f0f2f5;border-color:rgba(0,0,0,.1)"></div>
+          <div class="swatch" style="background:#ffffff;border-color:rgba(0,0,0,.1)"></div>
+          <div class="swatch" style="background:#e5e7eb;border-color:rgba(0,0,0,.08)"></div>
+          <div class="swatch" style="background:#10b981"></div>
+          <div class="swatch" style="background:#0d1117"></div>
+          <div class="swatch" style="background:#6b7280"></div>
+        </div>
+        <div class="pal-fonts" style="color:#9ca3af">Inter · Fira Code</div>
+      </div>
+    </div>
+
+    <!-- FORGE -->
+    <div class="pal-card forge">
+      <div class="pal-preview">
+        <div class="pal-mini-header">
+          <span class="pal-mini-logo" style="font-family:'Space Mono',monospace;font-size:10px">FARO</span>
+          <span class="pal-mini-dot"></span>
+        </div>
+        <div class="pal-mini-stats">
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#f59e0b;font-family:'Space Mono',monospace;font-size:12px">2,357</div><div class="pal-mini-lbl">Activos</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="font-family:'Space Mono',monospace;font-size:12px">$4.2M</div><div class="pal-mini-lbl">Mediana</div></div>
+          <div class="pal-mini-stat"><div class="pal-mini-val" style="color:#34d399;font-family:'Space Mono',monospace;font-size:12px">8.2</div><div class="pal-mini-lbl">Score</div></div>
+        </div>
+        <div class="pal-mini-bar" style="background:#f59e0b;width:65%;opacity:1"></div>
+        <div class="pal-mini-bar" style="background:#f59e0b;width:42%;opacity:.5"></div>
+        <div class="pal-mini-bar" style="background:#f59e0b;width:78%;opacity:.3"></div>
+        <div class="pal-mini-card" style="margin-top:10px">
+          <div class="pal-mini-card-title" style="font-family:'Space Mono',monospace;font-size:9px;color:#fcd34d">Villas del Renacimiento · $3.8M</div>
+          <div class="pal-mini-card-sub" style="color:#6b7280">terreno · 450m² · RE/MAX</div>
+        </div>
+      </div>
+      <div class="pal-meta">
+        <div class="pal-name">04 — FORGE</div>
+        <div class="pal-desc">Carbón oscuro con ámbar vivo. Mezcla lo mejor de VÉRTICE (oscuro, serio) con un acento más energético.</div>
+        <div class="pal-swatches">
+          <div class="swatch" style="background:#111318"></div>
+          <div class="swatch" style="background:#18191f"></div>
+          <div class="swatch" style="background:#24252e"></div>
+          <div class="swatch" style="background:#f59e0b"></div>
+          <div class="swatch" style="background:#fcd34d"></div>
+          <div class="swatch" style="background:#f5f5f4"></div>
+        </div>
+        <div class="pal-fonts">Space Grotesk · Space Mono</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     LOGOS
+═══════════════════════════════════════════════════════ -->
+<section class="section">
+  <div class="section-label">Identidad</div>
+  <h2 class="section-title">Opciones de logo</h2>
+  <div class="logos-wrap">
+    <div class="logo-grid">
+
+      <!-- A: Wordmark puro -->
+      <div class="logo-card">
+        <div class="logo-mark">
+          <svg viewBox="0 0 80 32" width="80" height="32">
+            <text x="0" y="26" font-family="DM Sans, system-ui" font-weight="700" font-size="28" fill="#3b82f6" letter-spacing="-1">FARO</text>
+          </svg>
+        </div>
+        <div class="logo-card-name">A — Wordmark</div>
+        <div class="logo-card-desc">Solo tipografía. Limpio, directo. El nombre hace todo el trabajo.</div>
+      </div>
+
+      <!-- B: Punto + wordmark -->
+      <div class="logo-card">
+        <div class="logo-mark" style="display:flex;align-items:center;gap:8px">
+          <svg viewBox="0 0 20 20" width="22" height="22">
+            <circle cx="10" cy="10" r="9" fill="none" stroke="#3b82f6" stroke-width="1.5"/>
+            <circle cx="10" cy="10" r="3.5" fill="#3b82f6"/>
+          </svg>
+          <svg viewBox="0 0 60 24" width="60" height="24">
+            <text x="0" y="20" font-family="DM Sans, system-ui" font-weight="700" font-size="22" fill="#f1f5f9" letter-spacing="-0.5">FARO</text>
+          </svg>
+        </div>
+        <div class="logo-card-name">B — Pin</div>
+        <div class="logo-card-desc">Círculo con núcleo + wordmark. Evoca un pin de mapa o punto de datos.</div>
+      </div>
+
+      <!-- C: 3 líneas ascendentes -->
+      <div class="logo-card">
+        <div class="logo-mark" style="display:flex;align-items:center;gap:10px">
+          <svg viewBox="0 0 28 28" width="32" height="32">
+            <rect x="2"  y="16" width="6" height="10" rx="1.5" fill="#3b82f6"/>
+            <rect x="11" y="9"  width="6" height="17" rx="1.5" fill="#3b82f6"/>
+            <rect x="20" y="3"  width="6" height="23" rx="1.5" fill="#3b82f6"/>
+          </svg>
+          <svg viewBox="0 0 60 24" width="56" height="24">
+            <text x="0" y="20" font-family="DM Sans, system-ui" font-weight="700" font-size="22" fill="#f1f5f9" letter-spacing="-0.5">FARO</text>
+          </svg>
+        </div>
+        <div class="logo-card-name">C — Signal</div>
+        <div class="logo-card-desc">3 barras de señal ascendente. Analytics, datos, crecimiento. Muy reconocible.</div>
+      </div>
+
+      <!-- D: Diagonal bold -->
+      <div class="logo-card">
+        <div class="logo-mark" style="display:flex;align-items:center;gap:10px">
+          <svg viewBox="0 0 28 28" width="32" height="32">
+            <line x1="24" y1="4" x2="4" y2="24" stroke="#3b82f6" stroke-width="3.5" stroke-linecap="round"/>
+            <circle cx="24" cy="4" r="4" fill="#3b82f6"/>
+            <circle cx="4"  cy="24" r="2.5" fill="#3b82f6" opacity=".45"/>
+          </svg>
+          <svg viewBox="0 0 60 24" width="56" height="24">
+            <text x="0" y="20" font-family="DM Sans, system-ui" font-weight="700" font-size="22" fill="#f1f5f9" letter-spacing="-0.5">FARO</text>
+          </svg>
+        </div>
+        <div class="logo-card-name">D — Vector</div>
+        <div class="logo-card-desc">Línea diagonal + punto origen. Evoca dirección, tendencia, trayectoria de mercado.</div>
+      </div>
+
+      <!-- E: Bracket -->
+      <div class="logo-card">
+        <div class="logo-mark" style="display:flex;align-items:center;gap:10px">
+          <svg viewBox="0 0 28 28" width="32" height="32">
+            <path d="M10 4 L4 4 L4 24 L10 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M18 4 L24 4 L24 24 L18 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg viewBox="0 0 60 24" width="56" height="24">
+            <text x="0" y="20" font-family="DM Sans, system-ui" font-weight="700" font-size="22" fill="#f1f5f9" letter-spacing="-0.5">FARO</text>
+          </svg>
+        </div>
+        <div class="logo-card-name">E — Frame</div>
+        <div class="logo-card-desc">Corchetes [ ]. Enmarca los datos. Código, precisión, análisis. Muy tech.</div>
+      </div>
+
+      <!-- F: Slash dot -->
+      <div class="logo-card">
+        <div class="logo-mark" style="display:flex;align-items:center;gap:10px">
+          <svg viewBox="0 0 28 28" width="32" height="32">
+            <line x1="20" y1="4" x2="8" y2="24" stroke="#3b82f6" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="8" cy="24" r="3.5" fill="#3b82f6"/>
+          </svg>
+          <svg viewBox="0 0 60 24" width="56" height="24">
+            <text x="0" y="20" font-family="DM Sans, system-ui" font-weight="700" font-size="22" fill="#f1f5f9" letter-spacing="-0.5">FARO</text>
+          </svg>
+        </div>
+        <div class="logo-card-name">F — Slash</div>
+        <div class="logo-card-desc">Diagonal + punto final. Minimal extremo. Funciona en 16px y en valla publicitaria.</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     TIPOGRAFÍA
+═══════════════════════════════════════════════════════ -->
+<section class="section">
+  <div class="section-label">Texto</div>
+  <h2 class="section-title">Pares de tipografía</h2>
+  <div class="typo-grid">
+
+    <div class="typo-card">
+      <div class="typo-sample-big" style="font-family:'DM Sans',sans-serif">Inteligencia<br>de mercado</div>
+      <div class="typo-sample-body" style="font-family:'DM Sans',sans-serif">Score de zona: 8.2 · NSE B/C+ · Crecimiento +18.4% 2010-2020</div>
+      <div class="typo-mono" style="font-family:'DM Mono',monospace">$4,200,000 MXN · pm² $9,800</div>
+      <div class="typo-pair">DM Sans + DM Mono · par 01</div>
+    </div>
+
+    <div class="typo-card">
+      <div class="typo-sample-big" style="font-family:'Sora',sans-serif">Inteligencia<br>de mercado</div>
+      <div class="typo-sample-body" style="font-family:'Sora',sans-serif">Score de zona: 8.2 · NSE B/C+ · Crecimiento +18.4% 2010-2020</div>
+      <div class="typo-mono" style="font-family:'Space Mono',monospace;font-size:10px">$4,200,000 MXN · pm² $9,800</div>
+      <div class="typo-pair">Sora + Space Mono · par 02</div>
+    </div>
+
+    <div class="typo-card" style="background:#111113">
+      <div class="typo-sample-big" style="font-family:'Inter',sans-serif;color:#0f172a">Inteligencia<br>de mercado</div>
+      <div class="typo-sample-body" style="font-family:'Inter',sans-serif;color:#475569">Score de zona: 8.2 · NSE B/C+ · Crecimiento +18.4% 2010-2020</div>
+      <div class="typo-mono" style="font-family:'Fira Code',monospace;color:#6b7280">$4,200,000 MXN · pm² $9,800</div>
+      <div class="typo-pair">Inter + Fira Code · par 03</div>
+    </div>
+
+    <div class="typo-card">
+      <div class="typo-sample-big" style="font-family:'Space Mono',monospace;font-size:1.4rem">Inteligencia<br>de mercado</div>
+      <div class="typo-sample-body" style="font-family:'DM Sans',sans-serif">Score de zona: 8.2 · NSE B/C+ · Crecimiento +18.4% 2010-2020</div>
+      <div class="typo-mono" style="font-family:'Space Mono',monospace">$4,200,000 MXN · pm² $9,800</div>
+      <div class="typo-pair">Space Mono + DM Sans · par 04</div>
+    </div>
+
+  </div>
+</section>
+
+<div class="cta">
+  <p>Dile a Claude qué paleta, logo y tipografía te gustan</p>
+  <p style="color:#3b82f6;font-family:'DM Mono',monospace;font-size:13px">ej. "01 APEX + C Signal + par 01"</p>
+</div>
+
+</body>
+</html>
