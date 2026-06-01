@@ -1989,7 +1989,8 @@ const LOGO_SVGS = {
 const LOGO_NAMES = { pin: 'Pin', signal: 'Signal', frame: 'Frame', slash: 'Slash' };
 
 function getActiveLogo() {
-  return localStorage.getItem('faro_logo') || 'pin';
+  const saved = localStorage.getItem('faro_logo');
+  return (saved && LOGO_SVGS[saved]) ? saved : 'pin';
 }
 
 function setLogo(key) {
