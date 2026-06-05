@@ -41,6 +41,14 @@ valor de construccion real). Entrega por piezas con checkpoint.
 - Filtro "Oportunidad flip (>=70)" en el dropdown "Solo".
 - 100% client-side (usa promedios de colonia ya disponibles); no toca la DB.
 
+### Pieza 2b - Fix sobre-simplificacion del uso de suelo
+- La zonificacion son ~23,451 poligonos chicos (1 por manzana) dentro de 32 features.
+  El RDP a ~44m los colapsaba a triangulos y borraba muchos -> huecos donde los pins no caian.
+- Re-simplificado a ~3m (eps 0.00003) con fallback que NO borra poligonos: 4.05MB (~1MB gzip),
+  los 23,451 poligonos preservados.
+- Render en canvas (`L.canvas`) para ~23k poligonos sin lag (SVG era inviable).
+- Point-in-polygon ahora con indice plano por-poligono + bbox: 0.077ms/lookup.
+
 ### MK2 completo. Pendiente:
 - MK3: persistir `uso_suelo` en Supabase (point-in-polygon batch del geojson completo 20MB,
   con service key) para filtrar por uso de suelo en la lista sin cargar el geojson en cada sesion.

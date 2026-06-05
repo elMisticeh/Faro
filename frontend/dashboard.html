@@ -1667,13 +1667,21 @@ async function cargarZonificacion() {
     const res = await fetch('data/zonificacion_torreon_slim.geojson');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // Precompute bbox por feature para acelerar point-in-polygon
+    // Indice plano de poligonos (manzanas) con bbox: la zonificacion son ~23k poligonos
+    // chicos repartidos en 32 features; el bbox por-poligono hace el point-in-polygon O(1) practico.
+    const index = [];
     data.features.forEach(f => {
-      let mnX=Infinity, mnY=Infinity, mxX=-Infinity, mxY=-Infinity;
+      const sim = f.properties.SIMBOLOGIA;
       const polys = f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [f.geometry.coordinates];
-      polys.forEach(poly => poly[0].forEach(([x,y]) => { if(x<mnX)mnX=x; if(x>mxX)mxX=x; if(y<mnY)mnY=y; if(y>mxY)mxY=y; }));
-      f._bbox = [mnX, mnY, mxX, mxY];
+      polys.forEach(poly => {
+        const outer = poly[0];
+        if (!outer || outer.length < 4) return;
+        let mnX=Infinity, mnY=Infinity, mxX=-Infinity, mxY=-Infinity;
+        for (const [x,y] of outer) { if(x<mnX)mnX=x; if(x>mxX)mxX=x; if(y<mnY)mnY=y; if(y>mxY)mxY=y; }
+        index.push({ bb:[mnX,mnY,mxX,mxY], outer, holes: poly.slice(1), sim });
+      });
     });
+    window._zonifIndex = index;
     zonifData = data;
     return zonifData;
   } catch(e) { console.warn('Zonificacion no cargada:', e.message); return null; }
@@ -1681,17 +1689,15 @@ async function cargarZonificacion() {
 
 // Que SIMBOLOGIA contiene el punto (lat,lng). Maneja MultiPolygon + huecos.
 function usoDeSueloEnPunto(lat, lng) {
-  if (!zonifData) return null;
-  for (const f of zonifData.features) {
-    const bb = f._bbox;
-    if (bb && (lng < bb[0] || lng > bb[2] || lat < bb[1] || lat > bb[3])) continue;
-    const polys = f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [f.geometry.coordinates];
-    for (const poly of polys) {
-      if (poly[0] && puntoDentroDePoligono(lat, lng, poly[0])) {
-        let inHole = false;
-        for (let h = 1; h < poly.length; h++) { if (puntoDentroDePoligono(lat, lng, poly[h])) { inHole = true; break; } }
-        if (!inHole) return f.properties.SIMBOLOGIA;
-      }
+  const idx = window._zonifIndex;
+  if (!idx) return null;
+  for (const p of idx) {
+    const bb = p.bb;
+    if (lng < bb[0] || lng > bb[2] || lat < bb[1] || lat > bb[3]) continue;
+    if (puntoDentroDePoligono(lat, lng, p.outer)) {
+      let inHole = false;
+      for (const h of p.holes) { if (puntoDentroDePoligono(lat, lng, h)) { inHole = true; break; } }
+      if (!inHole) return p.sim;
     }
   }
   return null;
@@ -1722,7 +1728,8 @@ async function toggleZonificacion() {
 function dibujarZonificacion(data) {
   if (zonifLayer) zonifLayer.remove();
   zonifLayer = L.geoJSON(data, {
-    style: f => ({ color: getZoneColor(f.properties.SIMBOLOGIA), weight: 0.7, fillColor: getZoneColor(f.properties.SIMBOLOGIA), fillOpacity: 0.30 }),
+    renderer: L.canvas({ padding: 0.5 }),  // canvas: ~23k poligonos sin lag (SVG seria lentisimo)
+    style: f => ({ color: getZoneColor(f.properties.SIMBOLOGIA), weight: 0.5, fillColor: getZoneColor(f.properties.SIMBOLOGIA), fillOpacity: 0.32 }),
     onEachFeature: (f, layer) => {
       layer.on('click', e => { mostrarUsoSidebar(f.properties.SIMBOLOGIA, layer); L.DomEvent.stopPropagation(e); });
     }
