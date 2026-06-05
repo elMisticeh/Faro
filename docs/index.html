@@ -213,6 +213,8 @@ a.link-ext:hover{text-decoration:underline}
 /* Leaflet tooltip */
 .leaflet-tooltip{background:var(--surface)!important;border:1px solid var(--border)!important;color:var(--text)!important;border-radius:5px!important;box-shadow:var(--shadow-sm)!important;font-size:11px!important}
 .leaflet-tooltip::before{display:none!important}
+/* Bandera de precio del mapa de calor: glass oscuro para contraste sobre fondo claro */
+.leaflet-tooltip.flag-tip{background:#0d1117!important;border:1px solid rgba(16,185,129,.45)!important;color:#e8eaf0!important;border-radius:10px!important;box-shadow:0 8px 22px rgba(0,0,0,.38)!important;padding:9px 12px!important;font-size:12px!important}
 
 /* Basemap selector */
 .basemap-selector{position:absolute;bottom:20px;left:20px;z-index:1000;display:flex;gap:3px}
@@ -1205,9 +1207,9 @@ function renderMap() {
         ${d.m2_terreno ? d.m2_terreno.toLocaleString()+' m² lote' : ''}
         ${d.m2_construccion ? ' · '+d.m2_construccion.toLocaleString()+' m² const.' : ''}
         ${pm2 ? '<br>$'+Math.round(pm2).toLocaleString()+'/m²' : ''}
-        ${pct != null ? ` · <span style="color:${pct<0?'#4ade80':'#94a3b8'}">${pct>0?'+':''}${pct}% vs colonia</span>` : ''}
+        ${pct != null ? ` · <span style="color:${pct<0?'#059669':'#6b7280'}">${pct>0?'+':''}${pct}% vs colonia</span>` : ''}
       </div>
-      <span class="popup-badge" style="background:rgba(232,255,71,.15);color:#e8ff47">${d.tipo_operacion||''}</span>
+      <span class="popup-badge" style="background:rgba(5,150,105,.12);color:#059669">${d.tipo_operacion||''}</span>
       <span class="popup-badge" style="background:rgba(255,255,255,.08);color:#94a3b8">${(d.tipo_inmueble||'').replace('_',' ')}</span>
       ${d.es_oportunidad ? '<div class="popup-oportunidad">🟢 Oportunidad detectada</div>' : ''}
       ${d.link_publicacion ? `<br><a class="popup-link" href="${d.link_publicacion}" target="_blank">↗ Ver publicación</a>` : ''}
@@ -1263,7 +1265,7 @@ function openHexSidebar(hexCenter, pts, variable) {
       const precio = d.precio_mxn ? '$'+Math.round(d.precio_mxn).toLocaleString('es-MX')+' MXN' : '—';
       const m2str = [d.m2_terreno?d.m2_terreno+'m² lote':'', d.m2_construccion?d.m2_construccion+'m² const':''].filter(Boolean).join(' · ');
       const distStr = d.dist < 1 ? Math.round(d.dist*1000)+'m' : d.dist.toFixed(1)+'km';
-      const opColor = d.tipo_operacion==='venta' ? '#e8ff47' : '#47b8ff';
+      const opColor = d.tipo_operacion==='venta' ? '#059669' : '#2563eb';
       // Peso IDW de este punto en el hex (para mostrar su influencia)
       const distKm = Math.max(d.dist, 0.05);
       const peso = (1/Math.pow(distKm, IDW_POWER));
@@ -1273,21 +1275,21 @@ function openHexSidebar(hexCenter, pts, variable) {
       return `<div class="hex-card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div class="hex-card-precio" style="color:#e8ff47">${valorVariable || '—'}</div>
+            <div class="hex-card-precio" style="color:#059669">${valorVariable || '—'}</div>
             <div class="hex-card-pm2">${precio}</div>
           </div>
           <div style="text-align:right">
             <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">influencia</div>
-            <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${influencia>60?'#4ade80':influencia>25?'#e8ff47':'#6b7280'}">${influencia}%</div>
+            <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${influencia>60?'#059669':influencia>25?'#d97706':'#6b7280'}">${influencia}%</div>
           </div>
         </div>
         <div class="hex-card-meta">
           ${d.colonia||'Sin colonia'} · <b>${distStr}</b>
           ${m2str ? '<br>'+m2str : ''}
-          ${d.pct_vs_colonia!=null ? `<br><span style="color:${d.pct_vs_colonia<0?'#4ade80':'#94a3b8'}">${d.pct_vs_colonia>0?'+':''}${d.pct_vs_colonia}% vs colonia</span>` : ''}
+          ${d.pct_vs_colonia!=null ? `<br><span style="color:${d.pct_vs_colonia<0?'#059669':'#6b7280'}">${d.pct_vs_colonia>0?'+':''}${d.pct_vs_colonia}% vs colonia</span>` : ''}
         </div>
         <div class="hex-card-badges">
-          <span class="hex-card-badge" style="background:rgba(232,255,71,.12);color:${opColor}">${d.tipo_operacion||''}</span>
+          <span class="hex-card-badge" style="background:rgba(5,150,105,.1);color:${opColor}">${d.tipo_operacion||''}</span>
           <span class="hex-card-badge" style="background:var(--surface);color:var(--muted);border:1px solid var(--border)">${(d.tipo_inmueble||'').replace('_',' ')}</span>
         </div>
         ${d.es_oportunidad ? '<div class="hex-opor">🟢 Oportunidad detectada</div>' : ''}
@@ -1461,14 +1463,15 @@ async function toggleColonias() {
     }
     coloniasLayer = L.geoJSON(data, {
       style: {
-        color: 'rgba(232,255,71,0.6)',
-        weight: 1,
+        color: '#047857',
+        weight: 1.3,
+        opacity: 0.85,
         fillOpacity: 0,
-        dashArray: '3,3'
+        dashArray: '5,4'
       },
       onEachFeature: (f, layer) => {
         const nombre = f.properties.colonia || '—';
-        layer.bindTooltip(`<span style="font-family:var(--mono);font-size:11px;color:#e8eaf0">${nombre}</span>`,
+        layer.bindTooltip(`<span style="font-family:var(--mono);font-size:11px;color:var(--text)">${nombre}</span>`,
           {sticky: true, direction: 'top'});
       }
     }).addTo(map);
@@ -1549,8 +1552,14 @@ function heatMedian(arr) {
   return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
 }
 
+// Cierra las banderas (tooltips) del heatmap para que no dejen trail al panear
+function cerrarBanderasMapa() {
+  if (typeof hexLayer !== 'undefined' && hexLayer) hexLayer.eachLayer(l => { if (l.closeTooltip) l.closeTooltip(); });
+}
+
 function heatColor(t) {
-  const stops=[[13,71,161],[25,118,210],[66,165,245],[128,222,234],[165,214,167],[255,235,59],[255,152,0],[244,67,54],[255,23,68]];
+  // Ramp legible sobre fondo claro: sin amarillos/cianes washed-out. Frio (barato) -> calido (caro).
+  const stops=[[30,58,138],[37,99,235],[8,145,178],[13,148,136],[5,150,105],[202,138,4],[234,88,12],[220,38,38],[136,19,55]];
   const idx=Math.min(t*(stops.length-1),stops.length-1.001);
   const lo=Math.floor(idx),hi=Math.ceil(idx),f=idx-lo;
   const c=stops[lo].map((v,i)=>Math.round(v+f*(stops[hi][i]-v)));
@@ -1676,8 +1685,9 @@ function buildHeatmap() {
           <div style="color:#6b7280;font-size:10px;margin-top:4px">Click para ver detalle</div>
         </div>`;
 
-      // Hover tooltip — NO sticky, se mueve con el mouse pero no deja artefactos en pan
-      layer.bindTooltip(tipHtml, {sticky:false, direction:'top', offset:[0,-4]});
+      // Bandera que sigue el cursor (sticky) con estilo glass oscuro. El trail al panear
+      // se limpia con cerrarBanderasMapa() en movestart/zoomstart (ver abajo).
+      layer.bindTooltip(tipHtml, {sticky:true, direction:'top', offset:[0,-10], className:'flag-tip', opacity:1});
 
       layer.on('click', function(e) {
         // Cerrar tooltip de hover
@@ -1700,6 +1710,10 @@ function buildHeatmap() {
   map.on('click', function() {
     closeHexSidebar();
   });
+
+  // Fix trail de bandera: cerrar tooltips al iniciar paneo/zoom (evita artefactos)
+  map.off('movestart zoomstart', cerrarBanderasMapa);
+  map.on('movestart zoomstart', cerrarBanderasMapa);
 
   // Leyenda
   const gMed = heatMedian(vals);
