@@ -49,10 +49,23 @@ valor de construccion real). Entrega por piezas con checkpoint.
 - Render en canvas (`L.canvas`) para ~23k poligonos sin lag (SVG era inviable).
 - Point-in-polygon ahora con indice plano por-poligono + bbox: 0.077ms/lookup.
 
-### MK2 completo. Pendiente:
-- MK3: persistir `uso_suelo` en Supabase (point-in-polygon batch del geojson completo 20MB,
-  con service key) para filtrar por uso de suelo en la lista sin cargar el geojson en cada sesion.
-  Opcional: persistir tambien `m2c_real` y `flip_score`.
+### MK2 completo.
+
+## v3.1.0 "MK3" - 2026-06-05 (en progreso)
+
+Objetivo: uso de suelo persistido en Supabase para filtrar en la lista sin cargar el geojson por sesion.
+
+### Listo (codigo)
+- `scripts/mk3_uso_suelo.sql`: agrega columnas `uso_suelo` + `uso_suelo_cat` (aditivo, IF NOT EXISTS).
+- `scripts/poblar_uso_suelo.py`: batch point-in-polygon (indice plano por-poligono) que
+  pobla las 1,841 listings con coordenadas; agrupa updates por valor (PATCH en lotes de 150 ids).
+- Frontend: columna "Uso suelo" en la lista (con swatch de color) + filtro "Uso de suelo"
+  (categorias presentes) + ordenable. Lee `uso_suelo_cat` (NULL hasta correr el batch).
+- Fix categoria: EAP (Administracion Publica y Servicios Urbanos) -> Equipamiento (antes Servicios).
+
+### Pendiente (ejecucion, requiere acceso a la DB)
+1. Correr `scripts/mk3_uso_suelo.sql` en Supabase SQL Editor (DDL, una vez).
+2. Correr `py scripts/poblar_uso_suelo.py` para poblar las columnas.
 
 ### Nota sobre el "Score" actual
 `score_calidad_anuncio` (columna Score de la lista) NO es score de oportunidad:

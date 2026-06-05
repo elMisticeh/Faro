@@ -485,6 +485,9 @@ a.link-ext:hover{text-decoration:underline}
       </div>
     </div>
   </div>
+  <div class="filter-group"><label>Uso de suelo</label>
+    <select id="f-uso"><option value="">Todos</option></select>
+  </div>
   <div class="filter-group"><label>Solo</label>
     <select id="f-opor"><option value="">Todos</option><option value="1">Oportunidades</option><option value="flip">Oportunidad flip (≥70)</option></select>
   </div>
@@ -911,9 +914,11 @@ function aplicarFiltros() {
   const m2Min    = parseFloat(document.getElementById('f-m2-min').value) || 0;
   const m2Max    = parseFloat(document.getElementById('f-m2-max').value) || Infinity;
   const opor     = document.getElementById('f-opor').value;
+  const uso      = document.getElementById('f-uso') ? document.getElementById('f-uso').value : '';
   const cols     = msSelected['ms-colonias'];
 
   filteredData = allData.filter(d => {
+    if (uso && (d.uso_suelo_cat || '') !== uso) return false;
     if (op     && d.tipo_operacion !== op)    return false;
     if (tipo   && d.tipo_inmueble  !== tipo)  return false;
     if (fuente && d.pagina_fuente  !== fuente) return false;
@@ -1118,6 +1123,7 @@ function renderTabla() {
       <td><span class="badge badge-${d.tipo_operacion||'venta'}">${d.tipo_operacion||'—'}</span></td>
       <td><span class="tipo-badge">${(d.tipo_inmueble||'—').replace(/_/g,' ')}</span></td>
       <td class="colonia" title="${d.colonia||''}">${d.colonia||'—'}</td>
+      <td>${d.uso_suelo_cat ? `<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:${getZoneColor(d.uso_suelo)};flex-shrink:0"></span>${d.uso_suelo_cat}</span>` : '—'}</td>
       <td>${fuenteBadge(d.pagina_fuente)}</td>
       <td class="precio">${fmt(d.precio_mxn)}</td>
       <td class="precio-m2">${pm2 ? '$'+Math.round(pm2).toLocaleString()+'/m²' : '—'}</td>
@@ -1140,6 +1146,7 @@ function renderTabla() {
       <th data-col="tipo_operacion" onclick="ordenar(this.dataset.col)">Op.</th>
       <th data-col="tipo_inmueble" onclick="ordenar(this.dataset.col)">Tipo</th>
       <th data-col="colonia" onclick="ordenar(this.dataset.col)">Colonia</th>
+      <th data-col="uso_suelo_cat" onclick="ordenar(this.dataset.col)" title="Uso de suelo IMPLAN del punto (zonificacion)">Uso suelo</th>
       <th data-col="pagina_fuente" onclick="ordenar(this.dataset.col)">Fuente</th>
       <th data-col="precio_mxn" onclick="ordenar(this.dataset.col)">Precio</th>
       <th data-col="precio_x_m2_terreno" onclick="ordenar(this.dataset.col)">$/m²</th>
@@ -1621,8 +1628,8 @@ function usoCategoria(s) {
   if (s.includes('corredor'))                                return 'Corredor urbano';
   if (s.includes('habitacional') || s.includes('ejidal'))    return 'Habitacional';
   if (s.includes('industria') || s.includes('agroindustria'))return 'Industrial';
-  if (s.includes('servicios'))                               return 'Servicios';
   if (s.includes('equipamiento') || s.includes('administraci') || s.includes('asistencia') || s.includes('salud') || s.includes('educac') || s.includes('cultural') || s.includes('recreac') || s.includes('comunicac') || s.includes('verdes') || s.includes('espacios')) return 'Equipamiento';
+  if (s.includes('servicios'))                               return 'Servicios';
   if (s.includes('agr'))                                     return 'Agricola';
   if (s.includes('conserv'))                                 return 'Conservacion';
   return 'Otro';
@@ -2012,6 +2019,14 @@ function calcularValorConstruccion(data) {
   }
 }
 
+// Llena el filtro de uso de suelo con las categorias presentes (uso_suelo_cat de Supabase)
+function populateUsoFilter() {
+  const sel = document.getElementById('f-uso');
+  if (!sel) return;
+  const cats = [...new Set(allData.map(d => d.uso_suelo_cat).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Todos</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function cargarDatos() {
   document.getElementById('table-container').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando desde Supabase...</div>';
@@ -2021,6 +2036,7 @@ async function cargarDatos() {
     filteredData = [...allData];
     actualizarStats(allData);
     populateColoniaFilter();
+    populateUsoFilter();
     ordenar('fecha_ultimo_scrape', true);
     if (currentTab === 'map') renderMap();
   } catch(e) {
