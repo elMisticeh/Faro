@@ -485,7 +485,7 @@ a.link-ext:hover{text-decoration:underline}
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="btn secondary" onclick="descargarCSV()" title="Exportar muestra filtrada">↓ CSV</button>
     <button class="btn secondary" onclick="descargarResumen()" title="Resumen por colonia">↓ Resumen</button>
-    <button class="btn secondary" onclick="document.querySelector('.config-overlay').classList.add('open')">⚙ Config</button>
+    <button class="btn secondary" onclick="abrirOverlay('.config-overlay')">⚙ Config</button>
   </div>
 </div><!-- /filters-wrap -->
 </div><!-- /controls-bar -->
@@ -813,11 +813,28 @@ function switchTab(tab) {
   switchSubTab(tab === 'table' ? 'lista' : tab);
 }
 
+// ── Repaint nudge ───────────────────────────────────────────────────────────────
+// Fix iOS Safari / WebKit: tras mutar el DOM (filtros, innerHTML, overlays con
+// backdrop-filter) el repintado se difiere hasta el siguiente foco/cambio de tab.
+// Forzamos un reflow sincrono + un frame para que pinte de inmediato.
+function forceRepaint(el) {
+  if (!el) el = document.body;
+  el.style.transform = 'translateZ(0)';
+  void el.offsetHeight;
+  requestAnimationFrame(() => { el.style.transform = ''; });
+}
+function abrirOverlay(sel) {
+  const el = typeof sel === 'string' ? document.querySelector(sel) : sel;
+  if (!el) return;
+  el.classList.add('open');
+  forceRepaint(el);
+}
+
 // ── Supabase ──────────────────────────────────────────────────────────────────
 async function fetchListings() {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     document.getElementById('table-container').innerHTML = '<div class="empty">Configura tus credenciales → ⚙ Config</div>';
-    document.querySelector('.config-overlay').classList.add('open');
+    abrirOverlay('.config-overlay');
     document.getElementById('cfg-url').value = SUPABASE_URL;
     document.getElementById('cfg-key').value = SUPABASE_KEY;
     return [];
@@ -1060,7 +1077,7 @@ function renderTabla() {
 
   if (!slice.length) {
     document.getElementById('table-container').innerHTML = '<div class="empty">Sin resultados.</div>';
-    renderPaginacion(); return;
+    renderPaginacion(); forceRepaint(document.getElementById('table-container')); return;
   }
 
   const rows = slice.map(d => {
@@ -1108,6 +1125,7 @@ function renderTabla() {
       <th>Link</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   renderPaginacion();
+  forceRepaint(document.getElementById('table-container'));
 }
 
 function renderPaginacion() {
@@ -1917,7 +1935,7 @@ let _pinMap = null, _pinMarker = null, _pinListingId = null;
 
 function abrirMapaPin(id, lat, lng) {
   _pinListingId = id;
-  document.getElementById('pin-modal').classList.add('open');
+  abrirOverlay('#pin-modal');
   document.getElementById('pin-coords').textContent = `${(+lat).toFixed(6)}, ${(+lng).toFixed(6)}`;
 
   if (!_pinMap) {
@@ -2030,7 +2048,7 @@ function cerrarOnboarding() {
 function initOnboarding() {
   const done = localStorage.getItem('faro_onboarding_done');
   if (!done) {
-    document.getElementById('onboarding-overlay').classList.add('open');
+    abrirOverlay('#onboarding-overlay');
   }
 }
 
@@ -2062,7 +2080,7 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   // Init display state
   switchMainTab('mercado');
   switchSubTab('lista');
-  document.querySelector('.config-overlay').classList.add('open');
+  abrirOverlay('.config-overlay');
 }
 
 // ═══════════════════════════════════════════════════ DEMOGRAFÍA ══════════════
@@ -2398,12 +2416,17 @@ function renderDemoPanel(s, count, subtitle, title) {
     <div style="font-size:9px;color:var(--muted);text-align:center;padding:6px 0;border-top:1px solid var(--border)">
       Censo Población y Vivienda 2020 · INEGI · AMAI 2018<br>Datos DATERRA Consulting — COEZA Suite
     </div>
-    <button class="btn-reporte" onclick="generateReporte()" title="Reporte sociodemografico PDF">
-      ⬇ Demografico
+    <button class="btn-reporte" onclick="generateReporteConsolidado()" title="Reporte consolidado: demografia + mercado + recomendacion (1 click)" style="font-weight:700;background:linear-gradient(135deg,#059669,#10b981);box-shadow:0 4px 12px rgba(16,185,129,.35)">
+      📄 Reporte Consolidado
     </button>
-    <button class="btn-reporte" onclick="abrirFiltrosMercado()" title="Reporte de mercado inmobiliario PDF" style="margin-top:6px;background:#059669">
-      ⬇ Mercado
-    </button>`;
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn-reporte" onclick="generateReporte()" title="Solo sociodemografico" style="flex:1;background:#475569;font-size:11px">
+        Demográfico
+      </button>
+      <button class="btn-reporte" onclick="abrirFiltrosMercado()" title="Solo mercado, con filtros" style="flex:1;background:#475569;font-size:11px">
+        Mercado
+      </button>
+    </div>`;
   window._lastDemoStats = s;
   window._lastDemoTitle = title || 'Zona de Influencia';
   window._lastDemoSubtitle = subtitle || '';
@@ -2422,7 +2445,7 @@ function abrirFiltrosMercado() {
   document.getElementById('mf-status').textContent = '';
   document.getElementById('mf-btn-gen').disabled = false;
   document.getElementById('mf-btn-gen').textContent = 'Generar Reporte';
-  document.getElementById('mf-overlay').classList.add('open');
+  abrirOverlay('#mf-overlay');
 }
 
 function cerrarFiltrosMercado() {
@@ -2509,6 +2532,372 @@ async function fetchYGenerarReporte() {
 }
 
 
+// ════════════════════════════════════════════════════════════════════════════
+//  SISTEMA DE MARCA — REPORTES FARO  (membrete unico, logo Pin, paleta verde)
+//  Usado por el Reporte Consolidado. Logo y colores identicos al dashboard.
+// ════════════════════════════════════════════════════════════════════════════
+const FARO_BRAND = { ink:'#0d1117', accent:'#10b981', accent2:'#059669', deep:'#064e3b',
+  deep2:'#065f46', muted:'#6b7280', faint:'#9ca3af', border:'#e5e7eb', tint:'#ecfdf5', tint2:'#f0fdf4' };
+
+function faroLogoMark(size, color) {
+  size = size || 22; color = color || FARO_BRAND.accent;
+  return `<svg viewBox="0 0 22 22" width="${size}" height="${size}" fill="none" stroke="${color}" stroke-width="1.6"><circle cx="11" cy="11" r="9.5"/><circle cx="11" cy="11" r="3.8" fill="${color}" stroke="none"/></svg>`;
+}
+function faroToday() { return new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}); }
+
+function faroReportCSS() {
+  return `@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Sora',sans-serif;background:#f7f8fa;color:#0d1117;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4 portrait;margin:0}
+  .page{width:210mm;min-height:297mm;background:#fff;position:relative;page-break-after:always;display:flex;flex-direction:column;overflow:hidden}
+  .page:last-child{page-break-after:auto}
+  .ruled{height:2px;background:linear-gradient(90deg,#10b981 0%,rgba(16,185,129,.07) 100%)}
+  .eyebrow{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#10b981}
+  .h-sec{font-family:'Sora',sans-serif;font-size:1.12rem;font-weight:700;color:#0d1117;margin-bottom:13px}
+  .kpi-val{font-family:'Sora',sans-serif;font-size:2.2rem;font-weight:800;color:#0d1117;line-height:1;letter-spacing:-.02em}
+  .kpi-lbl{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#9ca3af;margin-top:5px}
+  .lh{padding:15px 28px 11px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e5e7eb}
+  .lh-brand{display:flex;align-items:center;gap:9px}
+  .wm{font-family:'Sora',sans-serif;font-weight:800;font-size:1.02rem;letter-spacing:.06em;color:#0d1117}
+  .wm-sub{font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#10b981}
+  .lh-meta{font-family:'Space Mono',monospace;font-size:9px;color:#9ca3af;text-align:right;line-height:1.7}
+  .foot{margin-top:auto;padding:10px 28px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between}
+  .foot-l{font-family:'Space Mono',monospace;font-size:8px;color:#9ca3af;letter-spacing:.05em}
+  table{width:100%;border-collapse:collapse}
+  th{background:#f0fdf4;font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;padding:7px 12px;text-align:left}
+  td{padding:7px 12px;font-size:11px;color:#1f2937}
+  tr:nth-child(even) td{background:#f9fafb}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:15px 17px}
+  .pill{display:inline-block;font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:20px;background:#ecfdf5;color:#059669}
+  .no-print{}
+  @media print{.no-print{display:none!important}}`;
+}
+
+function faroLetterhead(docTitle, sub, pageTitle, pageNum, tp) {
+  return `<div class="lh">
+    <div class="lh-brand">${faroLogoMark(20)}<span class="wm">FARO <span class="wm-sub">&middot; COEZA</span></span></div>
+    <div class="lh-meta">${docTitle}<br>${sub} &middot; ${faroToday()}</div>
+  </div>
+  <div style="padding:10px 28px 0;display:flex;align-items:baseline;justify-content:space-between">
+    <div class="eyebrow">${pageTitle}</div>
+    <div style="font-family:'Space Mono',monospace;font-size:8px;color:#9ca3af">${pageNum} / ${tp}</div>
+  </div>
+  <div style="margin:6px 28px 0"><div class="ruled"></div></div>`;
+}
+function faroFooter(note) {
+  return `<div class="foot"><span class="foot-l">${note || 'FARO &middot; COEZA Consulting &middot; Inteligencia inmobiliaria'}</span><span style="font-family:'Space Mono',monospace;font-size:8px;color:#10b981;letter-spacing:.08em">FARO</span></div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  REPORTE CONSOLIDADO — 1 click: Demografia + Mercado + Recomendacion
+// ════════════════════════════════════════════════════════════════════════════
+async function generateReporteConsolidado() {
+  const s = window._lastDemoStats;
+  if (!s) { alert('Selecciona una zona en Demografia primero.'); return; }
+  const CENTER = window._lastDemoCenter;
+  const RAD    = window._lastDemoRadius || 2;
+  const title  = window._lastDemoTitle  || 'Zona de Influencia';
+  const sub     = window._lastDemoSubtitle || ('Radio ' + RAD + ' km');
+  if (!SUPABASE_URL || !SUPABASE_KEY) { alert('Configura credenciales Supabase primero (boton Config).'); return; }
+
+  const st = document.getElementById('demo-status');
+  if (st) st.textContent = 'Generando reporte consolidado...';
+
+  // ── 1. Traer oferta de mercado en el radio ────────────────────────────────
+  let zona = [];
+  try {
+    const delta = (RAD + 1) / 111;
+    const url = `${SUPABASE_URL}/rest/v1/listings?select=id,precio_mxn,m2_terreno,m2_construccion,precio_x_m2_terreno,precio_x_m2_construccion,tipo_inmueble,tipo_operacion,pagina_fuente,colonia,lat,lng,historial_precio,es_oportunidad,pct_vs_colonia&activo=eq.true&lat=gte.${CENTER.lat-delta}&lat=lte.${CENTER.lat+delta}&lng=gte.${CENTER.lng-delta}&lng=lte.${CENTER.lng+delta}&limit=1000`;
+    const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }});
+    if (!r.ok) throw new Error('Supabase ' + r.status);
+    let data = await r.json();
+    const dKm=(la1,lo1,la2,lo2)=>{const R=6371,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180;const a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
+    zona = data.filter(d => d.lat && d.lng && dKm(CENTER.lat,CENTER.lng,+d.lat,+d.lng) <= RAD);
+  } catch(e) { if (st) st.textContent = 'Error: '+e.message; alert('No se pudo consultar el mercado: '+e.message); return; }
+
+  // ── 2. Helpers ─────────────────────────────────────────────────────────────
+  const f=(n,d=0)=>isNaN(n)||n==null?'&mdash;':(+n).toLocaleString('es-MX',{maximumFractionDigits:d,minimumFractionDigits:d});
+  const money=n=>isNaN(n)||n==null?'&mdash;':'$'+f(n);
+  const mm=n=>isNaN(n)||n==null?'&mdash;':'$'+f(n/1e6,2)+'M';
+  const sgn=n=>(n>=0?'+':'')+f(n,1)+'%';
+  const median=a=>{if(!a.length)return null;const x=[...a].sort((p,q)=>p-q);return x[Math.floor(x.length/2)];};
+  const pctile=(a,p)=>{if(!a.length)return null;const x=[...a].sort((m,n)=>m-n);return x[Math.max(0,Math.floor(x.length*p)-1)];};
+  const sortObj=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]);
+  function hbar(label,val,max,color){const w=max?Math.max(2,Math.round(val/max*100)):2;color=color||'#10b981';return `<div style="margin-bottom:7px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">${label}</span><span style="font-family:'Space Mono',monospace;font-size:11px;color:#0d1117;font-weight:700">${val}</span></div><div style="height:6px;background:#eef0f3;border-radius:4px"><div style="height:6px;background:${color};border-radius:4px;width:${w}%"></div></div></div>`;}
+
+  // ── 3. Metricas de mercado ─────────────────────────────────────────────────
+  const total = zona.length;
+  const byTipo={}, byPortal={};
+  zona.forEach(d=>{const t=(d.tipo_inmueble||'otro').replace(/_/g,' ');byTipo[t]=(byTipo[t]||0)+1;const p=(d.pagina_fuente||'otro').replace('inmuebles24','i24').replace('propiedades.com','prop.com').replace('mercadolibre','ML').replace('remax_laguna','ReMax');byPortal[p]=(byPortal[p]||0)+1;});
+  const ventas = zona.filter(d=>d.tipo_operacion==='venta'&&d.precio_mxn>0).map(d=>d.precio_mxn);
+  const medP=median(ventas), p25P=pctile(ventas,.25), p75P=pctile(ventas,.75);
+  const terr = zona.filter(d=>(d.tipo_inmueble||'').startsWith('terreno')&&d.precio_x_m2_terreno>0).map(d=>d.precio_x_m2_terreno);
+  const medPm2=median(terr); const BENCH_PM2=4850;
+  const benchDiff = medPm2&&BENCH_PM2 ? ((medPm2-BENCH_PM2)/BENCH_PM2)*100 : null;
+  // Presion de precios (historial)
+  let conHist=0,bajaron=0,sumRed=0;
+  zona.forEach(d=>{let h=d.historial_precio;if(typeof h==='string'){try{h=JSON.parse(h);}catch(e){h=null;}}if(!Array.isArray(h)||h.length<2)return;conHist++;const a=h[0].precio||h[0].price||0,b=h[h.length-1].precio||h[h.length-1].price||0;if(!a||!b)return;if(b<a*0.99){bajaron++;sumRed+=((a-b)/a)*100;}});
+  const pctBaj = conHist?Math.round(bajaron/conHist*100):0;
+  const presion = pctBaj>=35?'ALTA':pctBaj>=20?'MEDIA':'BAJA';
+  const opps = zona.filter(d=>d.es_oportunidad&&d.pct_vs_colonia<0).sort((a,b)=>(a.pct_vs_colonia||0)-(b.pct_vs_colonia||0)).slice(0,5);
+
+  // ── 4. Perfil sociodemografico / persona ───────────────────────────────────
+  const score = calcScore(s); const [slbl] = scoreLabel(score);
+  const pct_alto = s.nse_total ? (s.nse_ab+s.nse_cmas)/s.nse_total*100 : 0;
+  const pct_c    = s.nse_total ? s.nse_c/s.nse_total*100 : 0;
+  let nseLabel, ingresoRange, productType, habitType, pLow, pHigh;
+  if (pct_alto>=30){ nseLabel='A/B + C+'; ingresoRange='$35,000&ndash;$85,000+/mes'; productType='Residencial Plus / Premium'; habitType='Depto o casa 2&ndash;3 rec, amenidades completas'; pLow=3.5e6; pHigh=7e6; }
+  else if (pct_alto>=15){ nseLabel='C+ dominante'; ingresoRange='$35,000&ndash;$85,000/mes'; productType='Residencial / Residencial Plus'; habitType='Depto 2&ndash;3 rec, fraccionamiento cerrado'; pLow=2.5e6; pHigh=5e6; }
+  else if (pct_c>=30){ nseLabel='C predominante'; ingresoRange='$11,600&ndash;$35,000/mes'; productType='Vivienda Media'; habitType='Casa/depto accesible, credito hipotecario'; pLow=1e6; pHigh=2.5e6; }
+  else { nseLabel='C&minus; / D+'; ingresoRange='$6,800&ndash;$11,600/mes'; productType='Vivienda Popular / Interes Social'; habitType='Vivienda minima, Infonavit/subsidio'; pLow=0.5e6; pHigh=1.2e6; }
+  const ageCorto = s.pct_60>=20 ? ('Poblacion 60+ relevante ('+f(s.pct_60,1)+'%)') : s.pct_25_59>=44 ? ('Adultos 25&ndash;59 dominantes ('+f(s.pct_25_59,1)+'%)') : ('Cohorte joven 15&ndash;24 ('+f(s.pct_15_24,1)+'%)');
+
+  // ── 5. RECOMENDACION (que / a quien / cuantos / precio / por que) ───────────
+  const tipoDom = sortObj(byTipo)[0] ? sortObj(byTipo)[0][0] : null;
+  const queStr  = `<strong>${productType}</strong>. Formato: ${habitType}.` + (tipoDom ? ` Oferta activa dominante en zona: ${tipoDom}.` : '');
+  const quienStr= `NSE <strong>${nseLabel}</strong> &middot; ingreso ${ingresoRange}. ${ageCorto}. Escolaridad media ${f(s.escolaridad,1)} a&ntilde;os.`;
+  // Demanda potencial: formacion neta de hogares (decada 2010-2020 anualizada) x captura del segmento
+  const annualNewHog = (s.hog>0 && s.crec_hog>0) ? s.hog*(s.crec_hog/100)/10 : 0;
+  const segShare = pct_alto>=15 ? pct_alto/100 : (pct_c>0?pct_c/100:0.15);
+  const demBase = Math.round(annualNewHog*(segShare||0.15));
+  const demLow=Math.max(2,Math.round(demBase*0.7)), demHigh=Math.max(demLow+2,Math.round(demBase*1.3));
+  const cuantosStr = demBase>0
+    ? `<strong>${demLow} a ${demHigh} unidades/a&ntilde;o</strong> (segmento ${nseLabel}). Estimacion orientativa: formacion de hogares ${sgn(s.crec_hog)} 2010&ndash;2020 sobre ${f(s.hog)} hogares actuales, capturando el segmento objetivo. Oferta activa hoy en el radio: ${f(total)} listings.`
+    : `Formacion de hogares baja o negativa: enfoque en <strong>sustitucion/reposicion</strong>, no en oferta nueva masiva. Validar absorcion antes de desarrollar.`;
+  const bandLow = p25P || pLow, bandHigh = p75P || pHigh;
+  const precioMercadoNota = ventas.length>=4 ? `Banda empirica P25&ndash;P75 de ${ventas.length} ventas en zona.` : `Banda de referencia por NSE (oferta de venta insuficiente: ${ventas.length}).`;
+  const precioStr = `<strong>${mm(bandLow)} &ndash; ${mm(bandHigh)} MXN</strong>. ${precioMercadoNota}` + (medPm2 ? ` Terreno mediana zona: ${money(Math.round(medPm2))}/m&sup2;` + (benchDiff!=null?` (${sgn(benchDiff)} vs benchmark $${f(BENCH_PM2)}/m&sup2;).`:'.') : '.');
+  const benchTxt = benchDiff==null?'':(benchDiff>15?`Zona premium (${sgn(benchDiff)} vs benchmark $/m&sup2;).`:benchDiff<-15?`Zona con descuento (${sgn(benchDiff)} vs benchmark $/m&sup2;): posible ventana de entrada.`:`$/m&sup2; alineado al benchmark municipal (${sgn(benchDiff)}).`);
+  const presionTxt = conHist<3?'Historial de precios insuficiente para tendencia.':presion==='ALTA'?`Presion vendedora ALTA: ${pctBaj}% de los listings bajaron precio.`:presion==='MEDIA'?`Presion MEDIA: ${pctBaj}% ajustaron a la baja.`:`Presion BAJA: solo ${pctBaj}% redujo precio (oferta firme).`;
+  const porqueStr = `Score sociodemografico <strong>${score}/10 (${slbl})</strong>. ${presionTxt} ${benchTxt}`;
+
+  const recRow=(q,a)=>`<div style="padding:13px 0;border-bottom:1px solid #eef0f3"><div style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#10b981;margin-bottom:4px">${q}</div><div style="font-size:13px;color:#0d1117;line-height:1.5">${a}</div></div>`;
+
+  const TP = 7;
+
+  // ── PAGE 1 — PORTADA ───────────────────────────────────────────────────────
+  const kpis = [
+    ['Score Zona', score+'/10', slbl],
+    ['NSE Objetivo', nseLabel, 'perfil dominante'],
+    ['Oferta Activa', f(total), 'listings en radio'],
+    ['Precio Mediano', medP?mm(medP):'&mdash;', 'MXN venta'],
+  ];
+  const PAGE1 = `<div class="page">
+    <div style="flex:1;display:flex;flex-direction:column">
+      <div style="background:linear-gradient(135deg,#064e3b 0%,#065f46 55%,#047857 100%);padding:46px 46px 40px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-40px;right:-40px;width:240px;height:240px;border-radius:50%;border:1px solid rgba(16,185,129,.2)"></div>
+        <div style="position:absolute;top:30px;right:30px;width:130px;height:130px;border-radius:50%;border:1px solid rgba(16,185,129,.14)"></div>
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:34px">${faroLogoMark(26,'#ffffff')}
+          <span style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.15rem;letter-spacing:.08em;color:#fff">FARO</span>
+          <span style="font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:#6ee7b7">&middot; COEZA Consulting</span>
+        </div>
+        <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:#6ee7b7;margin-bottom:12px">Reporte Consolidado de Inteligencia de Mercado</div>
+        <div style="font-family:'Sora',sans-serif;font-size:2.5rem;font-weight:800;color:#fff;letter-spacing:-.01em;line-height:1.05;margin-bottom:8px">${title}</div>
+        <div style="font-family:'Sora',sans-serif;font-size:13px;color:rgba(236,253,245,.7)">${sub} &mdash; ${faroToday()}</div>
+      </div>
+      <div style="padding:30px 46px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+        ${kpis.map(k=>`<div class="card"><div class="kpi-val">${k[1]}</div><div class="kpi-lbl">${k[0]}</div><div style="font-family:'Sora',sans-serif;font-size:10px;color:#9ca3af;margin-top:3px">${k[2]||''}</div></div>`).join('')}
+      </div>
+      <div style="margin:26px 46px 0"><div class="ruled"></div></div>
+      <div style="padding:20px 46px 0">
+        <div class="eyebrow" style="margin-bottom:8px">Objeto del reporte</div>
+        <div style="font-size:12.5px;color:#374151;line-height:1.65;max-width:62ch">Documento de soporte para la toma de decisiones de desarrollo inmobiliario. Cruza el perfil sociodemografico del radio de influencia (INEGI 2020 + AMAI) con la oferta inmobiliaria activa capturada semanalmente, y sintetiza una <strong>recomendacion de producto, segmento, escala y precio</strong> para la zona analizada.</div>
+      </div>
+    </div>
+    ${faroFooter('FARO &middot; COEZA Consulting &middot; Confidencial &middot; Uso interno para toma de decisiones')}
+  </div>`;
+
+  // ── PAGE 2 — INDICE ────────────────────────────────────────────────────────
+  const idx=[['01','Resumen Ejecutivo &amp; Recomendacion','03'],['02','Perfil Sociodemografico','04'],['03','Analisis de Mercado','05'],['04','Fuentes y Metodologia','06'],['05','Glosario','07']];
+  const PAGE2 = `<div class="page">
+    ${faroLetterhead(title, sub, 'Indice', 2, TP)}
+    <div style="padding:26px 46px;flex:1">
+      <div style="font-family:'Sora',sans-serif;font-size:1.5rem;font-weight:800;color:#0d1117;margin-bottom:6px">Indice</div>
+      <div style="font-size:12px;color:#9ca3af;margin-bottom:24px">${title} &middot; ${sub}</div>
+      ${idx.map(([n,t,p])=>`<div style="display:flex;align-items:baseline;gap:14px;padding:14px 0;border-bottom:1px solid #eef0f3">
+        <span style="font-family:'Space Mono',monospace;font-size:12px;color:#10b981;font-weight:700">${n}</span>
+        <span style="font-family:'Sora',sans-serif;font-size:15px;color:#0d1117;font-weight:600;flex:1">${t}</span>
+        <span style="flex:1;border-bottom:1px dotted #d1d5db;transform:translateY(-4px)"></span>
+        <span style="font-family:'Space Mono',monospace;font-size:12px;color:#9ca3af">p.${p}</span>
+      </div>`).join('')}
+      <div class="card" style="margin-top:28px;background:#f0fdf4;border-color:#bbf7d0">
+        <div class="eyebrow" style="margin-bottom:7px">Como leer este reporte</div>
+        <div style="font-size:11.5px;color:#374151;line-height:1.6">La <strong>Recomendacion</strong> (seccion 01) es la sintesis accionable. Las secciones 02 y 03 contienen la evidencia que la sustenta. Las cifras de demanda son <strong>estimaciones orientativas</strong>, no proyecciones financieras; validar con levantamiento de campo antes de comprometer inversion.</div>
+      </div>
+    </div>
+    ${faroFooter()}
+  </div>`;
+
+  // ── PAGE 3 — RESUMEN EJECUTIVO + RECOMENDACION ─────────────────────────────
+  const PAGE3 = `<div class="page">
+    ${faroLetterhead(title, sub, '01 &middot; Resumen Ejecutivo &amp; Recomendacion', 3, TP)}
+    <div style="padding:22px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div style="font-family:'Sora',sans-serif;font-size:1.45rem;font-weight:800;color:#0d1117">Recomendacion de Mercado</div>
+        <span class="pill">Score ${score}/10 &middot; ${slbl}</span>
+      </div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:18px">Sintesis accionable cruzando demanda (perfil) con oferta (mercado activo).</div>
+      <div class="card" style="border-left:none;border-top:3px solid #10b981">
+        ${recRow('&iquest;Que desarrollar?', queStr)}
+        ${recRow('&iquest;A quien?', quienStr)}
+        ${recRow('&iquest;A cuantos? (demanda potencial)', cuantosStr)}
+        ${recRow('&iquest;A que precio?', precioStr)}
+        <div style="padding:13px 0 2px"><div style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#10b981;margin-bottom:4px">&iquest;Por que?</div><div style="font-size:13px;color:#0d1117;line-height:1.5">${porqueStr}</div></div>
+      </div>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="eyebrow" style="margin-bottom:9px">Senales de demanda (perfil)</div>
+          ${hbar('Crecimiento poblacion 2010&ndash;20', f(s.crec_pob,1)+'%', 40, s.crec_pob>=0?'#10b981':'#ef4444')}
+          ${hbar('Cohorte compradora 25&ndash;59', f(s.pct_25_59,1)+'%', 60)}
+          ${hbar('PEA activa', f(s.pct_pea,1)+'%', 60)}
+          ${hbar('NSE medio-alto (AB+C+)', f(pct_alto,1)+'%', 60, '#059669')}
+        </div>
+        <div class="card">
+          <div class="eyebrow" style="margin-bottom:9px">Senales de oferta (mercado)</div>
+          ${hbar('Oferta activa en radio', f(total), Math.max(total,10), '#0d9488')}
+          ${hbar('Presion vendedora', presion+' ('+pctBaj+'%)', 100, presion==='ALTA'?'#ef4444':presion==='MEDIA'?'#f59e0b':'#10b981')}
+          ${hbar('Oportunidades bajo mercado', f(opps.length), Math.max(opps.length,5), '#059669')}
+          ${hbar('Vacancia habitacional', f(s.pct_viv_des,1)+'%', 30, s.pct_viv_des>20?'#ef4444':s.pct_viv_des>12?'#f59e0b':'#10b981')}
+        </div>
+      </div>
+    </div>
+    ${faroFooter()}
+  </div>`;
+
+  // ── PAGE 4 — DEMOGRAFIA ────────────────────────────────────────────────────
+  const nseRows = [['A/B',s.nse_ab],['C+',s.nse_cmas],['C',s.nse_c],['C-',s.nse_cmenos],['D+',s.nse_dmas],['D',s.nse_d],['E',s.nse_e]];
+  const PAGE4 = `<div class="page">
+    ${faroLetterhead(title, sub, '02 &middot; Perfil Sociodemografico', 4, TP)}
+    <div style="padding:22px 28px;flex:1;display:grid;grid-template-columns:1fr 1fr;gap:26px;align-content:start">
+      <div>
+        <div class="h-sec">Poblacion y vivienda</div>
+        <table>
+          <tr><th>Indicador</th><th style="text-align:right">Zona</th><th style="text-align:right">Municipio</th></tr>
+          <tr><td>Poblacion total</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pob)}</td><td style="text-align:right;color:#9ca3af">700,595</td></tr>
+          <tr><td>Hogares</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.hog)}</td><td style="text-align:right;color:#9ca3af">209,771</td></tr>
+          <tr><td>Viviendas habitadas</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.viv_h)}</td><td style="text-align:right;color:#9ca3af">&mdash;</td></tr>
+          <tr><td>% PEA</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pct_pea,1)}%</td><td style="text-align:right;color:#9ca3af">49.8%</td></tr>
+          <tr><td>Escolaridad (a&ntilde;os)</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.escolaridad,1)}</td><td style="text-align:right;color:#9ca3af">11.1</td></tr>
+          <tr><td>% Vivienda deshabitada</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pct_viv_des,1)}%</td><td style="text-align:right;color:#9ca3af">14.6%</td></tr>
+        </table>
+        <div class="h-sec" style="margin-top:22px">Dinamica 2010&ndash;2020</div>
+        ${hbar('Poblacion', sgn(s.crec_pob), 40, s.crec_pob>=0?'#10b981':'#ef4444')}
+        ${hbar('Hogares', sgn(s.crec_hog), 40, s.crec_hog>=0?'#10b981':'#ef4444')}
+        ${hbar('Vivienda habitada', sgn(s.crec_viv), 40, s.crec_viv>=0?'#10b981':'#ef4444')}
+      </div>
+      <div>
+        <div class="h-sec">Estructura por edad</div>
+        ${hbar('0&ndash;14 a&ntilde;os', f(s.pct_0_14,1)+'%', 60)}
+        ${hbar('15&ndash;24 a&ntilde;os', f(s.pct_15_24,1)+'%', 60)}
+        ${hbar('25&ndash;59 a&ntilde;os', f(s.pct_25_59,1)+'%', 60, '#059669')}
+        ${hbar('60+ a&ntilde;os', f(s.pct_60,1)+'%', 60, s.pct_60>=20?'#f59e0b':'#10b981')}
+        <div class="h-sec" style="margin-top:22px">Nivel socioeconomico (AMAI)</div>
+        ${nseRows.map(([k,v])=>hbar(k, f(v), s.nse_total||1, '#059669')).join('')}
+        <div style="font-size:10px;color:#9ca3af;margin-top:6px">${f(s.nse_total)} viviendas clasificadas por AGEB</div>
+      </div>
+    </div>
+    ${faroFooter('Fuente: Censo de Poblacion y Vivienda 2020 (INEGI) &middot; Clasificacion NSE AMAI 2018')}
+  </div>`;
+
+  // ── PAGE 5 — MERCADO ───────────────────────────────────────────────────────
+  const percRow=(l,v,n)=>`<tr><td style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af">${l}</td><td style="text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:#0d1117">${v}</td><td style="font-size:10px;color:#6b7280">${n||''}</td></tr>`;
+  const oppRows = opps.length ? opps.map(d=>`<tr><td>${(d.colonia||'&mdash;')}</td><td style="text-transform:capitalize">${(d.tipo_inmueble||'').replace(/_/g,' ')}</td><td style="text-align:right;font-family:'Space Mono',monospace">${money(d.precio_mxn)}</td><td style="text-align:right;font-family:'Space Mono',monospace;color:#059669;font-weight:700">${f(d.pct_vs_colonia,1)}%</td></tr>`).join('') : `<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:14px">Sin oportunidades detectadas bajo el promedio de colonia.</td></tr>`;
+  const PAGE5 = `<div class="page">
+    ${faroLetterhead(title, sub, '03 &middot; Analisis de Mercado', 5, TP)}
+    <div style="padding:22px 28px;flex:1">
+      ${total<2 ? `<div class="card" style="background:#fffbeb;border-color:#fde68a"><div class="eyebrow" style="color:#d97706;margin-bottom:6px">Oferta insuficiente</div><div style="font-size:12px;color:#374151;line-height:1.6">Solo ${total} listing(s) en el radio. La recomendacion de precio se basa en la banda de referencia por NSE. Ampliar el radio o esperar mas capturas semanales para un benchmark robusto.</div></div>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:26px;align-content:start">
+        <div>
+          <div class="h-sec">Oferta por tipo de inmueble</div>
+          ${sortObj(byTipo).slice(0,6).map(([k,v])=>hbar(k.replace(/\b\w/g,c=>c.toUpperCase()),v,total)).join('')}
+          <div class="h-sec" style="margin-top:20px">Oferta por portal</div>
+          ${sortObj(byPortal).slice(0,5).map(([k,v])=>hbar(k,v,total,'#0d9488')).join('')}
+        </div>
+        <div>
+          <div class="h-sec">Precios de venta (MXN)</div>
+          <table>${percRow('P25', medP?money(p25P):'&mdash;','entrada')}${percRow('Mediana', medP?money(medP):'&mdash;','precio tipico')}${percRow('P75', medP?money(p75P):'&mdash;','techo comun')}</table>
+          <div style="font-size:10px;color:#9ca3af;margin:6px 0 0">Sobre ${ventas.length} listings de venta con precio.</div>
+          <div class="h-sec" style="margin-top:20px">Terreno &amp; benchmark</div>
+          <table>${percRow('$/m&sup2; mediana', medPm2?money(Math.round(medPm2)):'&mdash;','zona')}${percRow('Benchmark mun.', money(BENCH_PM2),'Torreon')}${percRow('Diferencia', benchDiff!=null?sgn(benchDiff):'&mdash;', benchDiff!=null?(benchDiff>0?'premium':'descuento'):'')}</table>
+          <div class="card" style="margin-top:16px;background:#f0fdf4;border-color:#bbf7d0">
+            <div class="eyebrow" style="margin-bottom:6px">Presion de precios</div>
+            <div style="font-size:12px;color:#0d1117;line-height:1.5"><strong>${presion}</strong> &middot; ${presionTxt}</div>
+          </div>
+        </div>
+      </div>
+      <div class="h-sec" style="margin-top:22px">Oportunidades detectadas (bajo promedio de colonia)</div>
+      <table><tr><th>Colonia</th><th>Tipo</th><th style="text-align:right">Precio</th><th style="text-align:right">vs colonia</th></tr>${oppRows}</table>`}
+    </div>
+    ${faroFooter('Fuente: scraping semanal de portales inmobiliarios &middot; Filtrado por radio geografico')}
+  </div>`;
+
+  // ── PAGE 6 — FUENTES Y METODOLOGIA ─────────────────────────────────────────
+  const PAGE6 = `<div class="page">
+    ${faroLetterhead(title, sub, '04 &middot; Fuentes y Metodologia', 6, TP)}
+    <div style="padding:24px 28px;flex:1">
+      <div class="h-sec">Fuentes de datos</div>
+      <table>
+        <tr><th>Fuente</th><th>Uso en el reporte</th><th>Vigencia</th></tr>
+        <tr><td><strong>INEGI</strong> &mdash; Censo 2020</td><td>Poblacion, vivienda, edad, PEA, escolaridad, dinamica 2010&ndash;2020</td><td>2020</td></tr>
+        <tr><td><strong>AMAI</strong> (Regla 8x7)</td><td>Clasificacion de nivel socioeconomico por AGEB</td><td>2018</td></tr>
+        <tr><td><strong>Portales inmobiliarios</strong></td><td>Oferta activa: precios, $/m&sup2;, tipologia, oportunidades</td><td>Captura semanal</td></tr>
+        <tr><td><strong>Benchmark municipal</strong></td><td>Referencia $/m&sup2; terreno Torreon</td><td>Interno COEZA</td></tr>
+      </table>
+      <div class="h-sec" style="margin-top:24px">Metodologia</div>
+      <div style="font-size:12px;color:#374151;line-height:1.7">
+        <p style="margin-bottom:10px"><strong>1. Delimitacion de zona.</strong> Radio geografico desde el punto seleccionado; se incluyen los AGEB cuyo centroide cae dentro del radio (demografia) y los listings dentro del radio por distancia haversine (mercado).</p>
+        <p style="margin-bottom:10px"><strong>2. Perfil sociodemografico.</strong> Agregacion de los AGEB del radio. El Score de zona (0&ndash;10) pondera crecimiento poblacional, cohorte compradora 25&ndash;59, ocupacion habitacional, PEA y concentracion NSE medio-alto.</p>
+        <p style="margin-bottom:10px"><strong>3. Analisis de mercado.</strong> Percentiles de precio de venta, $/m&sup2; de terreno vs benchmark, presion de precios (historial de listings) y deteccion de oportunidades (precio bajo el promedio de su colonia).</p>
+        <p style="margin-bottom:10px"><strong>4. Recomendacion.</strong> Cruce de demanda (persona por NSE + dinamica de hogares) con oferta (tipologia activa + precios reales). La demanda potencial es una estimacion orientativa derivada de la formacion neta de hogares 2010&ndash;2020.</p>
+      </div>
+      <div class="card" style="margin-top:18px;background:#fffbeb;border-color:#fde68a">
+        <div style="font-size:11px;color:#92400e;line-height:1.6"><strong>Limitaciones.</strong> Las cifras de demanda son orientativas, no proyecciones financieras. La oferta refleja unicamente publicaciones capturadas. Validar con levantamiento de campo y estudio de absorcion antes de comprometer inversion.</div>
+      </div>
+    </div>
+    ${faroFooter()}
+  </div>`;
+
+  // ── PAGE 7 — GLOSARIO ──────────────────────────────────────────────────────
+  const gl=[
+    ['AGEB','Area Geoestadistica Basica: unidad territorial minima del censo INEGI.'],
+    ['NSE','Nivel Socioeconomico (AMAI): A/B (alto) a E (bajo), estimado por caracteristicas de la vivienda.'],
+    ['PEA','Poblacion Economicamente Activa: personas que trabajan o buscan empleo.'],
+    ['Score de zona','Indice 0&ndash;10 que resume el atractivo sociodemografico para desarrollo (5 factores ponderados).'],
+    ['$/m&sup2; terreno','Precio del suelo por metro cuadrado; referencia clave para land-banking y residual.'],
+    ['Presion de precios','% de listings que han reducido su precio publicado; proxy de exceso de oferta.'],
+    ['P25 / Mediana / P75','Percentiles de precio: entrada, valor tipico y techo comun del mercado.'],
+    ['Oportunidad','Listing publicado por debajo del promedio de precio de su colonia.'],
+    ['Demanda potencial','Estimacion orientativa de unidades absorbibles/a&ntilde;o, derivada de formacion de hogares.'],
+    ['Vacancia','% de viviendas deshabitadas; umbrales: &lt;12% sano, 12&ndash;20% monitorear, &gt;20% alerta.'],
+    ['Benchmark municipal','Valor de referencia para Torreon usado para contrastar la zona.'],
+  ];
+  const PAGE7 = `<div class="page">
+    ${faroLetterhead(title, sub, '05 &middot; Glosario', 7, TP)}
+    <div style="padding:24px 28px;flex:1">
+      <div class="h-sec">Glosario de terminos</div>
+      ${gl.map(([t,d])=>`<div style="display:grid;grid-template-columns:160px 1fr;gap:16px;padding:11px 0;border-bottom:1px solid #eef0f3">
+        <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:12px;color:#059669">${t}</div>
+        <div style="font-size:11.5px;color:#374151;line-height:1.55">${d}</div></div>`).join('')}
+      <div style="margin-top:28px;text-align:center">
+        <div style="display:inline-flex;align-items:center;gap:9px">${faroLogoMark(18)}<span style="font-family:'Sora',sans-serif;font-weight:800;font-size:13px;letter-spacing:.06em;color:#0d1117">FARO</span><span style="font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#10b981">&middot; COEZA Consulting</span></div>
+        <div style="font-size:10px;color:#9ca3af;margin-top:8px">Inteligencia inmobiliaria &middot; ${faroToday()} &middot; Documento confidencial</div>
+      </div>
+    </div>
+    ${faroFooter()}
+  </div>`;
+
+  const pages = PAGE1+PAGE2+PAGE3+PAGE4+PAGE5+PAGE6+PAGE7;
+  const printBtn = `<button onclick="window.print()" class="no-print" style="position:fixed;bottom:22px;right:22px;z-index:9999;background:#10b981;color:#fff;border:none;border-radius:30px;padding:13px 24px;font-family:sans-serif;font-weight:700;font-size:14px;box-shadow:0 6px 18px rgba(16,185,129,.45);cursor:pointer">Imprimir / Guardar PDF</button>`;
+
+  const w = window.open('', '_blank', 'width=920,height=1100');
+  if (!w) { if(st) st.textContent='Permite ventanas emergentes para ver el reporte.'; alert('Permite ventanas emergentes para ver el reporte.'); return; }
+  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>FARO &mdash; Reporte Consolidado &mdash; ${title}</title><style>${faroReportCSS()}</style></head><body>${pages}${printBtn}</body></html>`);
+  w.document.close();
+  if (st) st.textContent = zona.length + ' listings · reporte generado';
+  setTimeout(()=>{ try{ w.focus(); }catch(e){} }, 250);
+}
+
 function generateReporteMercado(zona, title, sub) {
   // zona, title, sub vienen de fetchYGenerarReporte()
   if (!zona || zona.length < 2) { alert('Sin datos suficientes para el reporte.'); return; }
@@ -2590,12 +2979,12 @@ function generateReporteMercado(zona, title, sub) {
     : 'No se detectaron oportunidades de precio en esta zona con los datos actuales.';
 
   // ── Helper: horizontal bar ─────────────────────────────────────────────────
-  function hbar(label, val, max, color='#C8A24B') {
+  function hbar(label, val, max, color='#10b981') {
     const w = max ? Math.max(2, Math.round(val/max*100)) : 2;
     return `<div style="margin-bottom:7px">
       <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-        <span style="font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">${label}</span>
-        <span style="font-family:'Space Mono',monospace;font-size:11px;color:#1a1000;font-weight:500">${val}</span>
+        <span style="font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">${label}</span>
+        <span style="font-family:'Space Mono',monospace;font-size:11px;color:#0d1117;font-weight:500">${val}</span>
       </div>
       <div style="height:5px;background:#e5e7eb;border-radius:3px">
         <div style="height:5px;background:${color};border-radius:3px;width:${w}%;transition:width .3s"></div>
@@ -2606,34 +2995,29 @@ function generateReporteMercado(zona, title, sub) {
   function percRow(label, val, note='') {
     return `<tr>
       <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.12em;color:#9ca3af;text-transform:uppercase">${label}</td>
-      <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:13px;color:#1a1000;font-weight:500;text-align:right">${val===null?'—':fmtP(val)}</td>
-      <td style="padding:7px 12px;font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">${note}</td>
+      <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:13px;color:#0d1117;font-weight:500;text-align:right">${val===null?'—':fmtP(val)}</td>
+      <td style="padding:7px 12px;font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">${note}</td>
     </tr>`;
   }
 
   // ── Logo SVG (inline) ──────────────────────────────────────────────────────
-  const logoSVG = `<svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="#C8A24B" stroke-linecap="round">
-    <circle cx="16" cy="7" r="3" fill="#C8A24B" stroke="none"/>
-    <line x1="16" y1="10" x2="16" y2="28" stroke-width="1.8"/>
-    <line x1="16" y1="17" x2="7" y2="28" stroke-width="1.2" opacity="0.5"/>
-    <line x1="16" y1="17" x2="25" y2="28" stroke-width="1.2" opacity="0.5"/>
-  </svg>`;
+  const logoSVG = faroLogoMark(22, '#10b981');
 
   const pageStyle = `
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap');
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Sora',sans-serif;background:#f9fafb;color:#1a1000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{font-family:'Sora',sans-serif;background:#f9fafb;color:#0d1117;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     @page{size:A4 portrait;margin:0}
     .page{width:210mm;min-height:297mm;background:#ffffff;position:relative;page-break-after:always;display:flex;flex-direction:column;overflow:hidden}
     .page:last-child{page-break-after:auto}
     .ruled{height:1px;background:linear-gradient(90deg,#10b981 0%,rgba(200,162,75,.15) 100%)}
     .eyebrow{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#10b981}
-    .kpi-val{font-family:'Sora',sans-serif;font-size:2.4rem;font-weight:700;color:#1a1000;letter-spacing:-.01em;line-height:1}
+    .kpi-val{font-family:'Sora',sans-serif;font-size:2.4rem;font-weight:700;color:#0d1117;letter-spacing:-.01em;line-height:1}
     .kpi-label{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#9ca3af;margin-top:4px}
-    .section-title{font-family:'Sora',sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:.02em;color:#1a1000;margin-bottom:14px}
+    .section-title{font-family:'Sora',sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:.02em;color:#0d1117;margin-bottom:14px}
     .letterhead{padding:18px 28px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e5e7eb}
     .lh-brand{display:flex;align-items:center;gap:9px}
-    .lh-wordmark{font-family:'Sora',sans-serif;font-weight:700;font-size:1.05rem;letter-spacing:.04em;color:#1a1000}
+    .lh-wordmark{font-family:'Sora',sans-serif;font-weight:700;font-size:1.05rem;letter-spacing:.04em;color:#0d1117}
     .lh-sub{font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#10b981;margin-left:3px;vertical-align:middle}
     .lh-meta{font-family:'Space Mono',monospace;font-size:9px;color:#9ca3af;text-align:right;line-height:1.6}
     .footer{margin-top:auto;padding:10px 28px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between}
@@ -2655,7 +3039,7 @@ function generateReporteMercado(zona, title, sub) {
     </div>
     <div style="padding:10px 28px 0;display:flex;align-items:baseline;justify-content:space-between">
       <div class="eyebrow">${pageTitle}</div>
-      <div style="font-family:'Space Mono',monospace;font-size:8px;color:#c8b88a">${pageNum}/5</div>
+      <div style="font-family:'Space Mono',monospace;font-size:8px;color:#9ca3af">${pageNum}/5</div>
     </div>
     <div style="margin:6px 28px 0"><div class="ruled"></div></div>`;
   }
@@ -2709,7 +3093,7 @@ function generateReporteMercado(zona, title, sub) {
         </div>
         <div>
           <div class="eyebrow" style="margin-bottom:10px">Por portal</div>
-          ${sortObj(byPortal).slice(0,5).map(([k,v])=>hbar(k,v,total,'#a0936a')).join('')}
+          ${sortObj(byPortal).slice(0,5).map(([k,v])=>hbar(k,v,total,'#0d9488')).join('')}
         </div>
       </div>
     </div>
@@ -2732,9 +3116,9 @@ function generateReporteMercado(zona, title, sub) {
         <div style="margin-top:18px"><div class="ruled"></div></div>
         <div style="margin-top:14px">
           <div class="section-title">Venta vs Renta</div>
-          ${hbar('Venta', ventasZona.length, total, '#C8A24B')}
+          ${hbar('Venta', ventasZona.length, total, '#10b981')}
           ${hbar('Renta', rentasZona.length, total, '#d4a96a')}
-          <div style="margin-top:10px;font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">
+          <div style="margin-top:10px;font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">
             ${Math.round(ventasZona.length/total*100)}% de la oferta es venta. ${ventasZona.length >= rentasZona.length*3 ? 'Mercado orientado a venta.' : 'Mix equilibrado venta/renta.'}
           </div>
         </div>
@@ -2742,8 +3126,8 @@ function generateReporteMercado(zona, title, sub) {
       <!-- Col der -->
       <div>
         <div class="section-title">Fuentes de oferta</div>
-        ${sortObj(byPortal).map(([k,v])=>hbar(k,v,total,'#a0936a')).join('')}
-        <div style="margin-top:8px;font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a;line-height:1.5">
+        ${sortObj(byPortal).map(([k,v])=>hbar(k,v,total,'#0d9488')).join('')}
+        <div style="margin-top:8px;font-family:'Sora',sans-serif;font-size:11px;color:#6b7280;line-height:1.5">
           ${sortObj(byPortal)[0] ? `<b>${sortObj(byPortal)[0][0]}</b> lidera con ${Math.round(sortObj(byPortal)[0][1]/total*100)}% de la oferta en esta zona.` : ''} ${sortObj(byPortal).length >= 3 ? 'Mercado multi-portal: datos representativos.' : 'Oferta concentrada en pocos portales.'}
         </div>
         <div style="margin-top:18px"><div class="ruled"></div></div>
@@ -2756,8 +3140,8 @@ function generateReporteMercado(zona, title, sub) {
             ['Terrenos', fmt(terrenos.length)],
             ['Con historial de precio', fmt(conHist)],
           ].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0fdf4">
-            <span style="font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">${l}</span>
-            <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:500;color:#1a1000">${v}</span>
+            <span style="font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">${l}</span>
+            <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:500;color:#0d1117">${v}</span>
           </div>`).join('')}
         </div>
       </div>
@@ -2786,7 +3170,7 @@ function generateReporteMercado(zona, title, sub) {
             ${percRow('P90 — Tope', p90P, 'Límite superior del mercado')}
           </tbody>
         </table>
-        <div style="margin-top:10px;font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a;line-height:1.5">
+        <div style="margin-top:10px;font-family:'Sora',sans-serif;font-size:11px;color:#6b7280;line-height:1.5">
           Rango intercuartil (P25–P75): ${p25P&&p75P ? fmtP(p25P)+' — '+fmtP(p75P) : '—'}. El 50% de la oferta se concentra en esta banda de precios.
         </div>
       </div>
@@ -2803,20 +3187,20 @@ function generateReporteMercado(zona, title, sub) {
         <div style="margin-top:4px">
           ${[
             ['Benchmark municipal', BENCH_PM2, '#e5e7eb'],
-            ['Esta zona (mediana)', medPm2, '#C8A24B'],
+            ['Esta zona (mediana)', medPm2, '#10b981'],
           ].map(([l,v,c])=>`<div style="margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-              <span style="font-family:'Sora',sans-serif;font-size:10px;color:#7a6e5a">${l}</span>
-              <span style="font-family:'Space Mono',monospace;font-size:10px;color:#1a1000">$${fmt(v)}/m²</span>
+              <span style="font-family:'Sora',sans-serif;font-size:10px;color:#6b7280">${l}</span>
+              <span style="font-family:'Space Mono',monospace;font-size:10px;color:#0d1117">$${fmt(v)}/m²</span>
             </div>
             <div style="height:6px;background:#f0fdf4;border-radius:3px">
               <div style="height:6px;background:${c};border-radius:3px;width:${Math.min(100,Math.round(v/Math.max(medPm2,BENCH_PM2)*90))}%"></div>
             </div></div>`).join('')}
         </div>` : '<div style="font-family:\'Mulish\',sans-serif;font-size:11px;color:#9ca3af">Insuficientes terrenos con datos de pm² en esta zona.</div>'}
         <div style="margin-top:16px"><div class="ruled"></div></div>
-        <div style="margin-top:12px;padding:12px;background:${benchDiff&&benchDiff<-15?'#eafaf1':benchDiff&&benchDiff>15?'#fdecea':'#f9fafb'};border-radius:6px;border-left:3px solid ${benchDiff&&benchDiff<-15?'#1e8449':benchDiff&&benchDiff>15?'#c0392b':'#C8A24B'}">
+        <div style="margin-top:12px;padding:12px;background:${benchDiff&&benchDiff<-15?'#eafaf1':benchDiff&&benchDiff>15?'#fdecea':'#f9fafb'};border-radius:6px;border-left:3px solid ${benchDiff&&benchDiff<-15?'#1e8449':benchDiff&&benchDiff>15?'#c0392b':'#10b981'}">
           <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#9ca3af;margin-bottom:4px">Posición de mercado</div>
-          <div style="font-family:'Sora',sans-serif;font-size:12px;color:#1a1000;line-height:1.5">${mktPos}</div>
+          <div style="font-family:'Sora',sans-serif;font-size:12px;color:#0d1117;line-height:1.5">${mktPos}</div>
         </div>
       </div>
     </div>
@@ -2834,7 +3218,7 @@ function generateReporteMercado(zona, title, sub) {
         <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:20px;text-align:center">
           <div style="font-family:'Sora',sans-serif;font-size:3rem;font-weight:700;color:${presionColor};letter-spacing:.04em">${presion}</div>
           <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#9ca3af;margin-top:4px">Presión de mercado</div>
-          <div style="margin-top:12px;font-family:'Sora',sans-serif;font-size:12px;color:#7a6e5a;line-height:1.5">${presionTxt}</div>
+          <div style="margin-top:12px;font-family:'Sora',sans-serif;font-size:12px;color:#6b7280;line-height:1.5">${presionTxt}</div>
         </div>
         <!-- Stats de historial -->
         <div>
@@ -2846,12 +3230,12 @@ function generateReporteMercado(zona, title, sub) {
             ['Subieron precio', fmt(subieron), fmt(conHist?Math.round(subieron/conHist*100):0)+'%'],
             ['Sin cambios', fmt(estables), fmt(conHist?Math.round(estables/conHist*100):0)+'%'],
           ].map(([l,v,p])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0fdf4">
-            <span style="font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">${l}</span>
+            <span style="font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">${l}</span>
             <div style="display:flex;gap:14px">
-              <span style="font-family:'Space Mono',monospace;font-size:11px;color:#1a1000;font-weight:500">${v}</span>
+              <span style="font-family:'Space Mono',monospace;font-size:11px;color:#0d1117;font-weight:500">${v}</span>
               <span style="font-family:'Space Mono',monospace;font-size:10px;color:#9ca3af;width:36px;text-align:right">${p}</span>
             </div></div>`).join('')}
-          ${bajaron>0?`<div style="margin-top:10px;padding:8px 10px;background:#f9fafb;border-radius:5px;font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">Reducción promedio: <b style="color:#1a1000">${fmt(avgRed,1)}%</b> del precio original</div>`:''}
+          ${bajaron>0?`<div style="margin-top:10px;padding:8px 10px;background:#f9fafb;border-radius:5px;font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">Reducción promedio: <b style="color:#0d1117">${fmt(avgRed,1)}%</b> del precio original</div>`:''}
         </div>
       </div>
       <div><div class="ruled"></div></div>
@@ -2863,7 +3247,7 @@ function generateReporteMercado(zona, title, sub) {
           ['Presión alta (> 35%)', 'Exceso de oferta o urgencia de venta. Oportunidad para compradores con capital listo.', '#c0392b'],
         ].map(([t,d,c])=>`<div style="background:#ffffff;border-top:3px solid ${c};border-radius:0 0 7px 7px;padding:12px">
           <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;color:${c};text-transform:uppercase;margin-bottom:5px">${t}</div>
-          <div style="font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a;line-height:1.5">${d}</div>
+          <div style="font-family:'Sora',sans-serif;font-size:11px;color:#6b7280;line-height:1.5">${d}</div>
         </div>`).join('')}
       </div>
     </div>
@@ -2885,9 +3269,9 @@ function generateReporteMercado(zona, title, sub) {
           </tr></thead>
           <tbody>
           ${opps.map(d=>`<tr>
-            <td style="padding:7px 12px;font-family:'Sora',sans-serif;font-size:11px;color:#1a1000">${d.colonia||'—'}</td>
-            <td style="padding:7px 12px;font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a">${(d.tipo_inmueble||'').replace(/_/g,' ')}</td>
-            <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:11px;font-weight:500;color:#1a1000">$${fmt(d.precio_mxn)}</td>
+            <td style="padding:7px 12px;font-family:'Sora',sans-serif;font-size:11px;color:#0d1117">${d.colonia||'—'}</td>
+            <td style="padding:7px 12px;font-family:'Sora',sans-serif;font-size:11px;color:#6b7280">${(d.tipo_inmueble||'').replace(/_/g,' ')}</td>
+            <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:11px;font-weight:500;color:#0d1117">$${fmt(d.precio_mxn)}</td>
             <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:11px;font-weight:600;color:#1e8449">${fmt(d.pct_vs_colonia,1)}%</td>
             <td style="padding:7px 12px;font-family:'Space Mono',monospace;font-size:10px;color:#9ca3af">${d.pagina_fuente||'—'}</td>
           </tr>`).join('')}
@@ -2905,8 +3289,8 @@ function generateReporteMercado(zona, title, sub) {
           ].map(([n,t,d])=>`<div style="display:flex;gap:12px;padding:10px 14px;background:#ffffff;border-radius:7px;border-left:2px solid #10b981">
             <div style="font-family:'Space Mono',monospace;font-size:10px;color:#10b981;font-weight:500;flex-shrink:0;padding-top:1px">${n}</div>
             <div>
-              <div style="font-family:'Sora',sans-serif;font-size:.92rem;font-weight:600;color:#1a1000;margin-bottom:2px">${t}</div>
-              <div style="font-family:'Sora',sans-serif;font-size:11px;color:#7a6e5a;line-height:1.5">${d}</div>
+              <div style="font-family:'Sora',sans-serif;font-size:.92rem;font-weight:600;color:#0d1117;margin-bottom:2px">${t}</div>
+              <div style="font-family:'Sora',sans-serif;font-size:11px;color:#6b7280;line-height:1.5">${d}</div>
             </div></div>`).join('')}
         </div>
       </div>
