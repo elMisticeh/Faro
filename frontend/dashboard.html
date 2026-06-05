@@ -486,7 +486,7 @@ a.link-ext:hover{text-decoration:underline}
     </div>
   </div>
   <div class="filter-group"><label>Solo</label>
-    <select id="f-opor"><option value="">Todos</option><option value="1">Oportunidades</option></select>
+    <select id="f-opor"><option value="">Todos</option><option value="1">Oportunidades</option><option value="flip">Oportunidad flip (≥70)</option></select>
   </div>
   <button class="btn" onclick="aplicarFiltros()">Filtrar</button>
   <button class="btn secondary" onclick="limpiarFiltros()">Limpiar</button>
@@ -923,6 +923,7 @@ function aplicarFiltros() {
     if (m2Max < Infinity && (d.m2_terreno||0) > m2Max) return false;
     if (cols.size > 0 && !cols.has(d.colonia||''))     return false;
     if (opor === '1' && !d.es_oportunidad)    return false;
+    if (opor === 'flip' && !(d._flipScore >= 70)) return false;
     return true;
   });
   currentPage = 1;
@@ -1124,6 +1125,8 @@ function renderTabla() {
       <td>${d.es_oportunidad?'<span style="color:var(--success);font-weight:700">SI</span>':''}</td>
       <td>${fmtM2(d.m2_terreno)}</td>
       <td>${fmtM2(d.m2_construccion)}</td>
+      <td class="precio-m2">${d._m2cReal!=null ? '$'+Math.round(d._m2cReal).toLocaleString('es-MX')+'/m²' : (d._flipNote==='terreno_mayor' ? '<span style="color:#059669;font-weight:700;font-size:10px">terreno ≥ precio</span>' : '—')}</td>
+      <td>${d._flipScore!=null ? `<span style="font-family:var(--mono);font-weight:700;color:${d._flipScore>=70?'#059669':d._flipScore>=40?'#d97706':'#6b7280'}">${d._flipScore}</span>` : '—'}</td>
       <td>${recBan}</td>
       <td class="desc" title="${desc}">${desc||'—'}</td>
       <td class="score ${scoreClass(d.score_calidad_anuncio)}">${d.score_calidad_anuncio??'—'}</td>
@@ -1144,6 +1147,8 @@ function renderTabla() {
       <th data-col="es_oportunidad" onclick="ordenar(this.dataset.col)">Opor.</th>
       <th data-col="m2_terreno" onclick="ordenar(this.dataset.col)">M² lote</th>
       <th data-col="m2_construccion" onclick="ordenar(this.dataset.col)">M² const.</th>
+      <th data-col="_m2cReal" onclick="ordenar(this.dataset.col)" title="$/m² construido REAL: descuenta el valor del terreno (m² terreno × promedio $/m² de la colonia). Menor = más barata la construcción.">$/m² const. real</th>
+      <th data-col="_flipScore" onclick="ordenar(this.dataset.col)" title="Score de oportunidad de flipping (0-100). Mayor = construcción más barata vs el mercado.">Flip</th>
       <th>Rec/Baños</th>
       <th>Descripción</th>
       <th data-col="score_calidad_anuncio" onclick="ordenar(this.dataset.col)">Score</th>
@@ -1951,11 +1956,61 @@ function buildHeatmap() {
   document.getElementById('heat-smax').textContent   = heatFmt(vals[vals.length-1],variable);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  VALOR DE CONSTRUCCION POR RESIDUAL + SCORE DE OPORTUNIDAD (FLIPPING)
+//  El $/m2 construido "real" descuenta el valor del terreno (no como precio/m2c):
+//    valor_terreno   = m2_terreno * promedio($/m2 terreno de la colonia)
+//    valor_construido= precio_total - valor_terreno
+//    $/m2 const real = valor_construido / m2_construccion
+//  Score flip: percentil invertido (mientras mas barato el m2 construido, mayor
+//  la oportunidad de flipping). Todo client-side; no toca la DB.
+// ════════════════════════════════════════════════════════════════════════════
+function calcularValorConstruccion(data) {
+  // 1. Promedio de $/m2 terreno por colonia (min 2 muestras), con fallback global
+  const acc = {};
+  data.forEach(d => { if (d.colonia && d.precio_x_m2_terreno > 0) (acc[d.colonia] = acc[d.colonia] || []).push(d.precio_x_m2_terreno); });
+  const colAvg = {};
+  Object.entries(acc).forEach(([c, arr]) => { if (arr.length >= 2) colAvg[c] = arr.reduce((a,b)=>a+b,0)/arr.length; });
+  const allPm2 = data.map(d => d.precio_x_m2_terreno).filter(v => v > 0);
+  const globalAvg = allPm2.length ? allPm2.reduce((a,b)=>a+b,0)/allPm2.length : 0;
+  window._colAvgPm2Terreno = colAvg;
+
+  // 2. Residual de construccion por listing
+  const validos = [];
+  data.forEach(d => {
+    d._m2cReal = null; d._valorConstr = null; d._valorTerreno = null; d._flipScore = null; d._flipNote = null;
+    if (!(d.m2_construccion > 0 && d.precio_mxn > 0 && d.m2_terreno > 0)) return;
+    const avg = colAvg[d.colonia] || globalAvg;
+    if (!avg) return;
+    const vt = d.m2_terreno * avg;
+    const vc = d.precio_mxn - vt;
+    d._valorTerreno = vt; d._valorConstr = vc;
+    if (vc > 0) { d._m2cReal = vc / d.m2_construccion; if (d._m2cReal > 0) validos.push(d._m2cReal); }
+    else { d._flipNote = 'terreno_mayor'; }  // el terreno solo vale >= el precio total
+  });
+
+  // 3. Score de oportunidad por percentil (mas barato el m2 construido => mayor score)
+  if (validos.length >= 5) {
+    const sorted = [...validos].sort((a,b)=>a-b);
+    const n = sorted.length;
+    data.forEach(d => {
+      if (d._m2cReal != null && d._m2cReal > 0) {
+        let lo = 0, hi = n; const x = d._m2cReal;
+        while (lo < hi) { const mid = (lo+hi) >> 1; if (sorted[mid] < x) lo = mid+1; else hi = mid; }
+        d._flipScore = Math.round((1 - lo/(n-1||1)) * 100);
+      } else if (d._flipNote === 'terreno_mayor') {
+        d._flipScore = 99;  // construccion practicamente "gratis": revisar (oportunidad o dato sucio)
+      }
+    });
+  }
+}
+
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function cargarDatos() {
   document.getElementById('table-container').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando desde Supabase...</div>';
   try {
     allData = await fetchListings();
+    calcularValorConstruccion(allData);
     filteredData = [...allData];
     actualizarStats(allData);
     populateColoniaFilter();

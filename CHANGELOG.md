@@ -32,9 +32,19 @@ valor de construccion real). Entrega por piezas con checkpoint.
 - La bandera del heatmap muestra el uso de suelo del punto (point-in-polygon, ~0.16ms/lookup).
 - Datos en `frontend/data/` y `docs/data/` (fetch on-demand; no infla el HTML).
 
-### Pendiente MK2
-- Pieza 3: columna $/m2 construido real (resta valor de terreno por colonia) + score de oportunidad (flipping).
-- MK3: persistir `uso_suelo` en Supabase (point-in-polygon batch) para filtrar en la lista.
+### Pieza 3 - Valor de construccion por residual + score de oportunidad (flipping)
+- Nuevas columnas en la lista: **$/m2 const. real** y **Flip** (0-100, ordenable).
+- $/m2 const real = (precio_total - m2_terreno * promedio($/m2 terreno de la colonia)) / m2_construccion.
+  Corrige el calculo anterior (precio/m2c) que ignoraba el valor del suelo.
+- Score flip por percentil invertido: construccion mas barata vs mercado = mayor oportunidad.
+- Caso "terreno >= precio": construccion practicamente gratis -> flip 99 (revisar: oportunidad o dato sucio).
+- Filtro "Oportunidad flip (>=70)" en el dropdown "Solo".
+- 100% client-side (usa promedios de colonia ya disponibles); no toca la DB.
+
+### MK2 completo. Pendiente:
+- MK3: persistir `uso_suelo` en Supabase (point-in-polygon batch del geojson completo 20MB,
+  con service key) para filtrar por uso de suelo en la lista sin cargar el geojson en cada sesion.
+  Opcional: persistir tambien `m2c_real` y `flip_score`.
 
 ### Nota sobre el "Score" actual
 `score_calidad_anuncio` (columna Score de la lista) NO es score de oportunidad:
