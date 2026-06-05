@@ -352,6 +352,9 @@ a.link-ext:hover{text-decoration:underline}
 .demo-toolbar select{padding:3px 7px;font-size:11px}
 #demo-status{font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap}
 #demo-sidebar{width:390px}
+#uso-sidebar{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--surface);border-left:1px solid var(--border);z-index:1001;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.16,1,.3,1);overflow:hidden;box-shadow:var(--shadow)}
+#uso-sidebar.open{transform:translateX(0)}
+#uso-legend{position:absolute;bottom:16px;left:16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 13px;z-index:900;max-height:46vh;overflow-y:auto;box-shadow:var(--shadow-sm);font-size:11px;display:none}
 .demo-sidebar-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:180px;gap:10px;color:var(--muted);font-size:12px}
 .demo-sidebar-loading .spinner{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .75s linear infinite}
 .demo-kpi-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-radius:7px;overflow:hidden;margin-bottom:4px}
@@ -535,6 +538,11 @@ a.link-ext:hover{text-decoration:underline}
         <div class="heat-toggle-dot"></div>
         Colonias
       </div>
+      <div class="heat-sep"></div>
+      <div class="heat-toggle" id="uso-toggle" onclick="toggleZonificacion()">
+        <div class="heat-toggle-dot"></div>
+        Uso de suelo
+      </div>
       <div class="heat-sep" id="slider-sep" style="display:none"></div>
       <div id="slider-wrap" style="display:none;align-items:center;gap:8px">
         <label>Fotografía</label>
@@ -597,6 +605,19 @@ a.link-ext:hover{text-decoration:underline}
         <button class="hex-close" onclick="closeHexSidebar()">✕</button>
       </div>
       <div class="hex-sidebar-body" id="hex-sidebar-body"></div>
+    </div>
+
+    <!-- Uso de suelo (IMPLAN) -->
+    <div id="uso-legend"></div>
+    <div id="uso-sidebar">
+      <div class="hex-sidebar-header">
+        <div>
+          <div class="hex-sidebar-title">🗺 Uso de suelo</div>
+          <div class="hex-sidebar-sub" id="uso-sidebar-sub">Zonificación IMPLAN</div>
+        </div>
+        <button class="hex-close" onclick="cerrarUsoSidebar()">✕</button>
+      </div>
+      <div class="hex-sidebar-body" id="uso-sidebar-body"></div>
     </div>
   </div>
 </div>
@@ -1555,6 +1576,200 @@ function heatMedian(arr) {
   return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  USO DE SUELO — Zonificacion IMPLAN Torreon (on-demand, 32 zonas)
+// ════════════════════════════════════════════════════════════════════════════
+let zonifData = null, zonifLayer = null, zonifOn = false, _zonaSel = null;
+
+// Color por SIMBOLOGIA (portado de COEZA-RADAR zoneColors.js)
+function getZoneColor(simbologia) {
+  if (!simbologia) return '#64748b';
+  const s = simbologia.toLowerCase();
+  if (s.includes('muy baja'))            return '#bfdbfe';
+  if (s.includes('densidad baja'))       return '#93c5fd';
+  if (s.includes('media baja'))          return '#60a5fa';
+  if (s.includes('media alta'))          return '#2563eb';
+  if (s.includes('densidad media'))      return '#3b82f6';
+  if (s.includes('densidad alta'))       return '#1d4ed8';
+  if (s.includes('ejidal'))              return '#4f46e5';
+  if (s.includes('habitacional'))        return '#60a5fa';
+  if (s.includes('corredor') && s.includes('industria')) return '#b45309';
+  if (s.includes('corredor'))            return '#f59e0b';
+  if (s.includes('extractiva'))          return '#991b1b';
+  if (s.includes('pesada'))              return '#dc2626';
+  if (s.includes('mediana'))             return '#ef4444';
+  if (s.includes('ligera'))              return '#f97316';
+  if (s.includes('agroindustria'))       return '#fb923c';
+  if (s.includes('mixto') && s.includes('industria')) return '#db2777';
+  if (s.includes('mixto'))               return '#ec4899';
+  if (s.includes('servicios'))           return '#06b6d4';
+  if (s.includes('areas verdes') || s.includes('áreas verdes') || s.includes('espacios abiertos')) return '#22c55e';
+  if (s.includes('equipamiento') || s.includes('administraci') || s.includes('asistencia') || s.includes('salud') || s.includes('educac') || s.includes('cultural') || s.includes('recreac') || s.includes('comunicac') || s.includes('comercio')) return '#a855f7';
+  if (s.includes('agr'))                 return '#84cc16';
+  if (s.includes('conserv'))             return '#16a34a';
+  return '#94a3b8';
+}
+
+function usoCategoria(s) {
+  s = (s || '').toLowerCase();
+  if (s.includes('mixto'))                                   return 'Mixto';
+  if (s.includes('corredor'))                                return 'Corredor urbano';
+  if (s.includes('habitacional') || s.includes('ejidal'))    return 'Habitacional';
+  if (s.includes('industria') || s.includes('agroindustria'))return 'Industrial';
+  if (s.includes('servicios'))                               return 'Servicios';
+  if (s.includes('equipamiento') || s.includes('administraci') || s.includes('asistencia') || s.includes('salud') || s.includes('educac') || s.includes('cultural') || s.includes('recreac') || s.includes('comunicac') || s.includes('verdes') || s.includes('espacios')) return 'Equipamiento';
+  if (s.includes('agr'))                                     return 'Agricola';
+  if (s.includes('conserv'))                                 return 'Conservacion';
+  return 'Otro';
+}
+
+function usoCodigo(s) { const m = (s || '').match(/\(([^)]+)\)\s*$/); return m ? m[1] : ''; }
+
+// Nota orientada a desarrollo segun la zona
+function usoDescripcion(simbologia) {
+  const cod = usoCodigo(simbologia);
+  const map = {
+    HB:'Habitacional muy baja densidad. Lotes grandes, residencial campestre. Flipping de casas amplias / premium.',
+    H1:'Habitacional densidad baja. Vivienda unifamiliar, lotes amplios. Residencial medio-alto.',
+    H2:'Habitacional densidad media baja. Unifamiliar / duplex. Vivienda media.',
+    H3:'Habitacional densidad media. Vivienda media, duplex y conjuntos pequenos.',
+    H5:'Habitacional densidad media alta. Permite multifamiliar; viable departamentos.',
+    H6:'Habitacional densidad alta. Multifamiliar / vertical. Optimo para departamentos.',
+    HE:'Habitacional ejidal. Verificar regularizacion de tenencia antes de desarrollar.',
+    M1:'Mixto 1: habitacional con comercio. Planta baja comercial + vivienda. Buen producto mixto.',
+    M2:'Mixto 2: habitacional con comercio y servicios. Usos flexibles, alta demanda.',
+    M3:'Mixto 3: habitacional, comercio, servicios e industria ligera. Maxima flexibilidad de uso.',
+    S:'Servicios. Oficinas, servicios profesionales y comerciales.',
+    IL:'Industria ligera. Naves, logistica ligera. No habitacional.',
+    IM:'Industria mediana. Manufactura. No habitacional.',
+    IP:'Industria pesada. No apta para vivienda.',
+    IE:'Industria extractiva. No apta para vivienda.',
+    AI:'Agroindustria. Uso especializado.',
+    AR:'Agricola de riego. Suelo no urbanizable salvo cambio de uso.',
+    ZC:'Zona de conservacion. Desarrollo restringido / prohibido.',
+    AV:'Areas verdes y espacios abiertos. No edificable (equipamiento).',
+  };
+  if (map[cod]) return map[cod];
+  const cat = usoCategoria(simbologia);
+  if (cat === 'Corredor urbano') return 'Corredor urbano: comercio, servicios y vivienda sobre vialidad principal. Alta exposicion comercial.';
+  if (cat === 'Equipamiento')    return 'Equipamiento urbano (publico/institucional). Desarrollo privado limitado.';
+  return 'Consultar reglamento de zonificacion del IMPLAN para usos permitidos.';
+}
+
+async function cargarZonificacion() {
+  if (zonifData) return zonifData;
+  try {
+    const res = await fetch('data/zonificacion_torreon_slim.geojson');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    // Precompute bbox por feature para acelerar point-in-polygon
+    data.features.forEach(f => {
+      let mnX=Infinity, mnY=Infinity, mxX=-Infinity, mxY=-Infinity;
+      const polys = f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [f.geometry.coordinates];
+      polys.forEach(poly => poly[0].forEach(([x,y]) => { if(x<mnX)mnX=x; if(x>mxX)mxX=x; if(y<mnY)mnY=y; if(y>mxY)mxY=y; }));
+      f._bbox = [mnX, mnY, mxX, mxY];
+    });
+    zonifData = data;
+    return zonifData;
+  } catch(e) { console.warn('Zonificacion no cargada:', e.message); return null; }
+}
+
+// Que SIMBOLOGIA contiene el punto (lat,lng). Maneja MultiPolygon + huecos.
+function usoDeSueloEnPunto(lat, lng) {
+  if (!zonifData) return null;
+  for (const f of zonifData.features) {
+    const bb = f._bbox;
+    if (bb && (lng < bb[0] || lng > bb[2] || lat < bb[1] || lat > bb[3])) continue;
+    const polys = f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [f.geometry.coordinates];
+    for (const poly of polys) {
+      if (poly[0] && puntoDentroDePoligono(lat, lng, poly[0])) {
+        let inHole = false;
+        for (let h = 1; h < poly.length; h++) { if (puntoDentroDePoligono(lat, lng, poly[h])) { inHole = true; break; } }
+        if (!inHole) return f.properties.SIMBOLOGIA;
+      }
+    }
+  }
+  return null;
+}
+
+async function toggleZonificacion() {
+  zonifOn = !zonifOn;
+  const btn = document.getElementById('uso-toggle');
+  if (zonifOn) {
+    btn.classList.add('on');
+    const data = await cargarZonificacion();
+    if (!data) {
+      zonifOn = false; btn.classList.remove('on');
+      alert('No se pudo cargar la zonificacion.\nAbre el dashboard via servidor (serve.bat) o GitHub Pages — no funciona con file:// directo.');
+      return;
+    }
+    dibujarZonificacion(data);
+    document.getElementById('uso-legend').style.display = 'block';
+  } else {
+    btn.classList.remove('on');
+    if (zonifLayer) { zonifLayer.remove(); zonifLayer = null; }
+    document.getElementById('uso-legend').style.display = 'none';
+    cerrarUsoSidebar();
+  }
+  if (heatmapOn) buildHeatmap();  // refresca la bandera con/sin uso de suelo
+}
+
+function dibujarZonificacion(data) {
+  if (zonifLayer) zonifLayer.remove();
+  zonifLayer = L.geoJSON(data, {
+    style: f => ({ color: getZoneColor(f.properties.SIMBOLOGIA), weight: 0.7, fillColor: getZoneColor(f.properties.SIMBOLOGIA), fillOpacity: 0.30 }),
+    onEachFeature: (f, layer) => {
+      layer.on('click', e => { mostrarUsoSidebar(f.properties.SIMBOLOGIA, layer); L.DomEvent.stopPropagation(e); });
+    }
+  }).addTo(map);
+  if (zonifLayer.bringToBack) zonifLayer.bringToBack();
+  construirLeyendaUso();
+}
+
+function construirLeyendaUso() {
+  const cats = [
+    ['Habitacional','#60a5fa'], ['Mixto','#ec4899'], ['Corredor urbano','#f59e0b'],
+    ['Industrial','#f97316'], ['Servicios','#06b6d4'], ['Equipamiento','#a855f7'],
+    ['Agricola','#84cc16'], ['Conservacion','#16a34a'],
+  ];
+  document.getElementById('uso-legend').innerHTML =
+    '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:7px">Uso de suelo IMPLAN</div>' +
+    cats.map(([n,c]) => `<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px"><span style="width:12px;height:12px;border-radius:3px;background:${c};flex-shrink:0"></span><span style="color:var(--text)">${n}</span></div>`).join('') +
+    '<div style="font-size:9px;color:var(--muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px">Click una zona para detalle</div>';
+}
+
+function mostrarUsoSidebar(simbologia, layer) {
+  if (_zonaSel && _zonaSel.setStyle) _zonaSel.setStyle({ weight: 0.7 });
+  if (layer && layer.setStyle) { layer.setStyle({ weight: 2.5, color: '#0d1117' }); _zonaSel = layer; }
+  const color = getZoneColor(simbologia);
+  const cod = usoCodigo(simbologia);
+  const cat = usoCategoria(simbologia);
+  const nombre = simbologia.replace(/\s*\([^)]+\)\s*$/, '');
+  document.getElementById('uso-sidebar-sub').textContent = cat + (cod ? ' · ' + cod : '');
+  document.getElementById('uso-sidebar-body').innerHTML = `
+    <div class="hex-card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span style="width:34px;height:34px;border-radius:8px;background:${color};flex-shrink:0;box-shadow:0 0 0 1px var(--border)"></span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.25">${nombre}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--accent)">${cat}${cod?' · '+cod:''}</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text);line-height:1.55;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px">
+        ${usoDescripcion(simbologia)}
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:9px;line-height:1.5">
+        Fuente: Carta de zonificacion IMPLAN Torreon.<br>
+        Verifica el uso exacto y compatibilidades en el reglamento vigente antes de invertir.
+      </div>
+    </div>`;
+  document.getElementById('uso-sidebar').classList.add('open');
+}
+function cerrarUsoSidebar() {
+  document.getElementById('uso-sidebar').classList.remove('open');
+  if (_zonaSel && _zonaSel.setStyle) { _zonaSel.setStyle({ weight: 0.7 }); _zonaSel = null; }
+}
+
 // Cierra las banderas (tooltips) del heatmap para que no dejen trail al panear.
 // Leaflet a veces deja el nodo DOM del tooltip sticky huerfano al panear despues
 // de un click; por eso ademas barremos los nodos .flag-tip directamente.
@@ -1682,12 +1897,15 @@ function buildHeatmap() {
     onEachFeature: (f,layer)=>{
       const {val,count,opacity,variable:v,hex} = f.properties;
       const cert = count >= 5 ? '🟢 Alta' : count >= 3 ? '🟡 Media' : count >= 2 ? '🟠 Baja' : '⚪ 1 pin (estimada)';
+      let usoLine = '';
+      if (zonifData) { const cc = h3.cellToLatLng(hex); const uu = usoDeSueloEnPunto(cc[0], cc[1]); if (uu) usoLine = `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.14);color:#a7f3d0;font-size:10px">🗺 ${uu}</div>`; }
       const tipHtml = `
         <div style="font-family:var(--mono);font-size:12px;min-width:160px;color:#e8eaf0">
           <div style="font-size:18px;font-weight:700;color:#e8ff47">${heatFmt(val,v)}</div>
           <div style="color:#6b7280;font-size:10px;text-transform:uppercase;margin-bottom:6px">${varLabels[v]||v}</div>
           <div style="display:flex;justify-content:space-between"><span style="color:#6b7280">Certeza</span><span>${cert}</span></div>
           <div style="display:flex;justify-content:space-between"><span style="color:#6b7280">Fuentes</span><span>${count} pin${count!==1?'s':''}</span></div>
+          ${usoLine}
           <div style="color:#6b7280;font-size:10px;margin-top:4px">Click para ver detalle</div>
         </div>`;
 
@@ -1712,9 +1930,10 @@ function buildHeatmap() {
     }
   }).addTo(map);
 
-  // Click en mapa vacío cierra sidebar y popup
+  // Click en mapa vacío cierra sidebars y popup
   map.on('click', function() {
     closeHexSidebar();
+    if (typeof cerrarUsoSidebar === 'function') cerrarUsoSidebar();
   });
 
   // Fix trail de bandera: cerrar tooltips al iniciar paneo/zoom/drag (evita artefactos)

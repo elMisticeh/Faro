@@ -19,8 +19,20 @@ valor de construccion real). Entrega por piezas con checkpoint.
 - Recoloreados los `#e8ff47`/`#4ade80` ilegibles en popups y sidebar de hexagono
   a emerald `#059669` / amber `#d97706`.
 
+### Pieza 1b - Fix bandera (click + trail)
+- Bandera pinneada (click) ahora glass oscuro igual que la del cursor (`.hex-popup`).
+- `cerrarBanderasMapa` elimina nodos `.flag-tip` huerfanos + bind a `dragstart`;
+  el click hace sweep previo (ya no quedan varias banderas pegadas al panear).
+
+### Pieza 2 - Uso de suelo (zonificacion IMPLAN, on-demand)
+- Toggle "Uso de suelo" en la toolbar del mapa: carga `data/zonificacion_torreon_slim.geojson`
+  (32 zonas, 0.83MB, simplificado RDP ~44m desde los 20MB originales del IMPLAN).
+- Capa coloreada por SIMBOLOGIA (getZoneColor) + leyenda por categoria.
+- Click en zona -> sidebar con SIMBOLOGIA, codigo, categoria y nota orientada a desarrollo.
+- La bandera del heatmap muestra el uso de suelo del punto (point-in-polygon, ~0.16ms/lookup).
+- Datos en `frontend/data/` y `docs/data/` (fetch on-demand; no infla el HTML).
+
 ### Pendiente MK2
-- Pieza 2: sidebar de uso de suelo al click en mapa (zonificacion IMPLAN on-demand) + uso de suelo en la bandera.
 - Pieza 3: columna $/m2 construido real (resta valor de terreno por colonia) + score de oportunidad (flipping).
 - MK3: persistir `uso_suelo` en Supabase (point-in-polygon batch) para filtrar en la lista.
 
