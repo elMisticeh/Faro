@@ -230,8 +230,11 @@ a.link-ext:hover{text-decoration:underline}
 .hex-sidebar-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
 .hex-close{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 5px;border-radius:4px;transition:background .12s}
 .hex-close:hover{background:var(--surface2);color:var(--text)}
-.hex-popup .leaflet-popup-content-wrapper{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:8px!important}
-.hex-popup .leaflet-popup-tip{background:var(--surface)!important}
+/* Bandera pinneada (click) — mismo glass oscuro que la del cursor */
+.hex-popup .leaflet-popup-content-wrapper{background:#0d1117!important;border:1px solid rgba(16,185,129,.45)!important;border-radius:10px!important;color:#e8eaf0!important;box-shadow:0 8px 22px rgba(0,0,0,.4)!important}
+.hex-popup .leaflet-popup-content{color:#e8eaf0!important;margin:9px 12px!important}
+.hex-popup .leaflet-popup-tip{background:#0d1117!important}
+.hex-popup a.leaflet-popup-close-button{color:#9ca3af!important}
 .hex-sidebar-body{overflow-y:auto;flex:1;padding:10px;display:flex;flex-direction:column;gap:6px}
 .hex-card{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:11px;transition:border-color .12s}
 .hex-card:hover{border-color:var(--accent2)}
@@ -1552,9 +1555,12 @@ function heatMedian(arr) {
   return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
 }
 
-// Cierra las banderas (tooltips) del heatmap para que no dejen trail al panear
+// Cierra las banderas (tooltips) del heatmap para que no dejen trail al panear.
+// Leaflet a veces deja el nodo DOM del tooltip sticky huerfano al panear despues
+// de un click; por eso ademas barremos los nodos .flag-tip directamente.
 function cerrarBanderasMapa() {
   if (typeof hexLayer !== 'undefined' && hexLayer) hexLayer.eachLayer(l => { if (l.closeTooltip) l.closeTooltip(); });
+  document.querySelectorAll('.leaflet-tooltip.flag-tip').forEach(el => el.remove());
 }
 
 function heatColor(t) {
@@ -1690,8 +1696,8 @@ function buildHeatmap() {
       layer.bindTooltip(tipHtml, {sticky:true, direction:'top', offset:[0,-10], className:'flag-tip', opacity:1});
 
       layer.on('click', function(e) {
-        // Cerrar tooltip de hover
-        layer.closeTooltip();
+        // Cerrar todas las banderas de hover (evita que queden pegadas al panear despues)
+        cerrarBanderasMapa();
         // Abrir popup fijo en el centro del hex
         const center = h3.cellToLatLng(hex);
         L.popup({ closeButton:true, className:'hex-popup', maxWidth:220, autoPan:false })
@@ -1711,9 +1717,9 @@ function buildHeatmap() {
     closeHexSidebar();
   });
 
-  // Fix trail de bandera: cerrar tooltips al iniciar paneo/zoom (evita artefactos)
-  map.off('movestart zoomstart', cerrarBanderasMapa);
-  map.on('movestart zoomstart', cerrarBanderasMapa);
+  // Fix trail de bandera: cerrar tooltips al iniciar paneo/zoom/drag (evita artefactos)
+  map.off('movestart zoomstart dragstart', cerrarBanderasMapa);
+  map.on('movestart zoomstart dragstart', cerrarBanderasMapa);
 
   // Leyenda
   const gMed = heatMedian(vals);
