@@ -51,21 +51,26 @@ valor de construccion real). Entrega por piezas con checkpoint.
 
 ### MK2 completo.
 
-## v3.1.0 "MK3" - 2026-06-05 (en progreso)
+## v3.1.0 "MK3" - 2026-06-06
 
 Objetivo: uso de suelo persistido en Supabase para filtrar en la lista sin cargar el geojson por sesion.
 
 ### Listo (codigo)
 - `scripts/mk3_uso_suelo.sql`: agrega columnas `uso_suelo` + `uso_suelo_cat` (aditivo, IF NOT EXISTS).
 - `scripts/poblar_uso_suelo.py`: batch point-in-polygon (indice plano por-poligono) que
-  pobla las 1,841 listings con coordenadas; agrupa updates por valor (PATCH en lotes de 150 ids).
+  pobla los listings con coordenadas; agrupa updates por valor (PATCH en lotes de 150 ids).
 - Frontend: columna "Uso suelo" en la lista (con swatch de color) + filtro "Uso de suelo"
-  (categorias presentes) + ordenable. Lee `uso_suelo_cat` (NULL hasta correr el batch).
+  (categorias presentes) + ordenable. Lee `uso_suelo_cat` directo de Supabase.
 - Fix categoria: EAP (Administracion Publica y Servicios Urbanos) -> Equipamiento (antes Servicios).
 
-### Pendiente (ejecucion, requiere acceso a la DB)
-1. Correr `scripts/mk3_uso_suelo.sql` en Supabase SQL Editor (DDL, una vez).
-2. Correr `py scripts/poblar_uso_suelo.py` para poblar las columnas.
+### Ejecutado (2026-06-06)
+- DDL corrido en Supabase SQL Editor (columnas + indice creados).
+- `poblar_uso_suelo.py` corrido: **848 / 1,869 listings con uso de suelo** (45%).
+  El resto cae fuera de la mancha urbana del IMPLAN (ejidos/periferia/otros municipios) -> NULL (esperado).
+- Distribucion: Habitacional 555, Corredor urbano 124, Equipamiento 97, Mixto 47, Industrial 24, Agricola 1.
+- Idempotente: re-correr el batch recalcula todo (util al agregar listings o mejorar la zonificacion).
+
+### MK3 completo.
 
 ### Nota sobre el "Score" actual
 `score_calidad_anuncio` (columna Score de la lista) NO es score de oportunidad:
