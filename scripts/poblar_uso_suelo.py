@@ -8,7 +8,7 @@ zonificacion IMPLAN. Correr DESPUES de scripts/mk3_uso_suelo.sql.
 Lee credenciales de .env (SUPABASE_URL, SUPABASE_KEY). No toca filas que no
 caen en ninguna zona (quedan NULL). Idempotente: re-correrlo recalcula todo.
 """
-import os, json, sys, urllib.request, urllib.error
+import os, json, sys, re, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEOJSON = os.path.join(ROOT, 'frontend', 'data', 'zonificacion_torreon_slim.geojson')
@@ -36,6 +36,11 @@ def categoria(s):
     if 'agr' in s: return 'Agricola'
     if 'conserv' in s: return 'Conservacion'
     return 'Otro'
+
+def clave(sim):
+    """Extrae el codigo IMPLAN exacto del parentesis: 'Habitacional ... (H1)' -> 'H1'."""
+    m = re.search(r'\(([^)]+)\)\s*$', sim or '')
+    return m.group(1) if m else None
 
 def pip(lat, lng, ring):
     inside = False; n = len(ring); j = n - 1
@@ -135,7 +140,7 @@ def main():
             chunk = ids[i:i + 150]
             inlist = '(' + ','.join(str(x) for x in chunk) + ')'
             u = base + '/rest/v1/listings?id=in.' + inlist
-            http('PATCH', u, key, {'uso_suelo': sim, 'uso_suelo_cat': cat})
+            http('PATCH', u, key, {'uso_suelo': sim, 'uso_suelo_clave': clave(sim), 'uso_suelo_cat': cat})
             total += len(chunk)
     print('Listo. %d listings actualizados con uso de suelo.' % total)
 

@@ -546,6 +546,11 @@ a.link-ext:hover{text-decoration:underline}
         <div class="heat-toggle-dot"></div>
         Uso de suelo
       </div>
+      <div class="heat-sep"></div>
+      <div class="heat-toggle" id="edit-toggle" onclick="toggleEditMode()">
+        <div class="heat-toggle-dot"></div>
+        Modo edición
+      </div>
       <div class="heat-sep" id="slider-sep" style="display:none"></div>
       <div id="slider-wrap" style="display:none;align-items:center;gap:8px">
         <label>Fotografía</label>
@@ -621,6 +626,13 @@ a.link-ext:hover{text-decoration:underline}
         <button class="hex-close" onclick="cerrarUsoSidebar()">✕</button>
       </div>
       <div class="hex-sidebar-body" id="uso-sidebar-body"></div>
+    </div>
+
+    <!-- Modo edición de pins (arrastrar ubicación) -->
+    <div id="edit-bar" style="display:none;position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:1002;background:#0d1117;color:#fff;border:1px solid var(--accent);border-radius:30px;padding:8px 10px 8px 16px;align-items:center;gap:12px;box-shadow:0 8px 22px rgba(0,0,0,.34)">
+      <span style="font-size:12px">Arrastra los pins a su ubicación correcta &middot; <b id="edit-count">0</b> movidos</span>
+      <button class="btn" id="edit-save-btn" onclick="guardarEdicionesPins()" style="padding:6px 14px">Guardar</button>
+      <button onclick="toggleEditMode()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1">&times;</button>
     </div>
   </div>
 </div>
@@ -1123,7 +1135,7 @@ function renderTabla() {
       <td><span class="badge badge-${d.tipo_operacion||'venta'}">${d.tipo_operacion||'—'}</span></td>
       <td><span class="tipo-badge">${(d.tipo_inmueble||'—').replace(/_/g,' ')}</span></td>
       <td class="colonia" title="${d.colonia||''}">${d.colonia||'—'}</td>
-      <td>${d.uso_suelo_cat ? `<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:${getZoneColor(d.uso_suelo)};flex-shrink:0"></span>${d.uso_suelo_cat}</span>` : '—'}</td>
+      <td>${(d.uso_suelo_clave || d.uso_suelo_cat) ? `<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:${getZoneColor(d.uso_suelo)};flex-shrink:0"></span><b>${d.uso_suelo_clave || usoCodigo(d.uso_suelo) || ''}</b>${d.uso_suelo_cat ? `<span style="color:var(--muted);font-size:10px">${d.uso_suelo_cat}</span>` : ''}</span>` : '—'}</td>
       <td>${fuenteBadge(d.pagina_fuente)}</td>
       <td class="precio">${fmt(d.precio_mxn)}</td>
       <td class="precio-m2">${pm2 ? '$'+Math.round(pm2).toLocaleString()+'/m²' : '—'}</td>
@@ -1251,8 +1263,19 @@ function renderMap() {
       ${d.link_publicacion ? `<br><a class="popup-link" href="${d.link_publicacion}" target="_blank">↗ Ver publicación</a>` : ''}
     `;
 
-    const marker = L.marker([d.lat, d.lng], { icon: crearIcono(d.tipo_inmueble, d.es_oportunidad) })
-      .bindPopup(popupHtml, { maxWidth: 260 });
+    const marker = L.marker([d.lat, d.lng], { icon: crearIcono(d.tipo_inmueble, d.es_oportunidad), draggable: editMode });
+    if (editMode) {
+      marker.on('dragend', () => {
+        const p = marker.getLatLng();
+        _pinEdits[d.id] = { lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6) };
+        const i = allData.findIndex(x => String(x.id) === String(d.id));
+        if (i >= 0) { allData[i].lat = _pinEdits[d.id].lat; allData[i].lng = _pinEdits[d.id].lng; }
+        const ec = document.getElementById('edit-count'); if (ec) ec.textContent = Object.keys(_pinEdits).length;
+      });
+      marker.bindTooltip('Arrastra para reubicar', { direction: 'top', offset: [0, -8] });
+    } else {
+      marker.bindPopup(popupHtml, { maxWidth: 260 });
+    }
     markerLayer.addLayer(marker);
   });
 
@@ -1261,6 +1284,59 @@ function renderMap() {
   if (sinCoords > 0 && conCoords.length === 0) {
     document.getElementById('map-count').textContent = '0 (sin coordenadas en DB)';
   }
+}
+
+// ── MODO EDICIÓN DE PINS (arrastrar ubicación -> Supabase, queda protegida) ─────
+let editMode = false;
+const _pinEdits = {};
+function toggleEditMode() {
+  editMode = !editMode;
+  const btn = document.getElementById('edit-toggle');
+  const bar = document.getElementById('edit-bar');
+  if (editMode) {
+    if (heatmapOn) toggleHeatmap();            // los pines deben estar visibles
+    btn.classList.add('on');
+    bar.style.display = 'flex';
+    document.getElementById('edit-count').textContent = Object.keys(_pinEdits).length;
+    cargarZonificacion();                       // necesario para recalcular uso de suelo al guardar
+  } else {
+    btn.classList.remove('on');
+    bar.style.display = 'none';
+  }
+  renderMap();
+}
+async function guardarEdicionesPins() {
+  const ids = Object.keys(_pinEdits);
+  if (!ids.length) { toggleEditMode(); return; }
+  if (!SUPABASE_URL || !SUPABASE_KEY) { alert('Sin conexión Supabase'); return; }
+  const btn = document.getElementById('edit-save-btn');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  await cargarZonificacion();
+  let ok = 0, err = 0;
+  for (const id of ids) {
+    const { lat, lng } = _pinEdits[id];
+    const sim = usoDeSueloEnPunto(lat, lng);
+    const body = { lat, lng, ubicacion_manual: true, fecha_edicion: new Date().toISOString() };
+    if (sim) { body.uso_suelo = sim; body.uso_suelo_clave = usoCodigo(sim); body.uso_suelo_cat = usoCategoria(sim); }
+    try {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/listings?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                   'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const i = allData.findIndex(x => String(x.id) === String(id));
+      if (i >= 0) { allData[i].lat = lat; allData[i].lng = lng;
+        if (sim) { allData[i].uso_suelo = sim; allData[i].uso_suelo_clave = usoCodigo(sim); allData[i].uso_suelo_cat = usoCategoria(sim); } }
+      ok++;
+    } catch(e) { err++; console.warn('pin', id, e.message); }
+  }
+  for (const id of ids) delete _pinEdits[id];
+  btn.disabled = false; btn.textContent = 'Guardar';
+  alert('Ubicaciones guardadas: ' + ok + (err ? ' · errores: ' + err : '') + '.\nQuedan protegidas: un futuro scrape actualizará precio/descripción pero NO moverá la ubicación.');
+  toggleEditMode();
+  if (typeof aplicarFiltros === 'function') aplicarFiltros();
 }
 
 // ── HEX SIDEBAR ───────────────────────────────────────────────────────────────
@@ -1594,33 +1670,50 @@ function heatMedian(arr) {
 let zonifData = null, zonifLayer = null, zonifOn = false, _zonaSel = null;
 
 // Color por SIMBOLOGIA (portado de COEZA-RADAR zoneColors.js)
-function getZoneColor(simbologia) {
-  if (!simbologia) return '#64748b';
-  const s = simbologia.toLowerCase();
-  if (s.includes('muy baja'))            return '#bfdbfe';
-  if (s.includes('densidad baja'))       return '#93c5fd';
-  if (s.includes('media baja'))          return '#60a5fa';
-  if (s.includes('media alta'))          return '#2563eb';
-  if (s.includes('densidad media'))      return '#3b82f6';
-  if (s.includes('densidad alta'))       return '#1d4ed8';
-  if (s.includes('ejidal'))              return '#4f46e5';
-  if (s.includes('habitacional'))        return '#60a5fa';
-  if (s.includes('corredor') && s.includes('industria')) return '#b45309';
-  if (s.includes('corredor'))            return '#f59e0b';
-  if (s.includes('extractiva'))          return '#991b1b';
-  if (s.includes('pesada'))              return '#dc2626';
-  if (s.includes('mediana'))             return '#ef4444';
-  if (s.includes('ligera'))              return '#f97316';
-  if (s.includes('agroindustria'))       return '#fb923c';
-  if (s.includes('mixto') && s.includes('industria')) return '#db2777';
-  if (s.includes('mixto'))               return '#ec4899';
-  if (s.includes('servicios'))           return '#06b6d4';
-  if (s.includes('areas verdes') || s.includes('áreas verdes') || s.includes('espacios abiertos')) return '#22c55e';
-  if (s.includes('equipamiento') || s.includes('administraci') || s.includes('asistencia') || s.includes('salud') || s.includes('educac') || s.includes('cultural') || s.includes('recreac') || s.includes('comunicac') || s.includes('comercio')) return '#a855f7';
-  if (s.includes('agr'))                 return '#84cc16';
-  if (s.includes('conserv'))             return '#16a34a';
-  return '#94a3b8';
-}
+// Normativa IMPLAN por clave exacta. COS/CUS/CAS/niveles/usos = pendientes de cargar
+// del reglamento de zonificacion (PDDU Torreon); al llenarlos aqui, bandera y sidebar
+// los muestran automaticamente. fam = familia (para leyenda y resumen).
+const NORMATIVA_USO = {
+  HB:  {nombre:'Habitacional densidad Muy Baja', fam:'Habitacional', color:'#d1fae5', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Lotes grandes, residencial campestre. Flipping de casas amplias / premium.'},
+  H1:  {nombre:'Habitacional densidad Baja', fam:'Habitacional', color:'#a7f3d0', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Vivienda unifamiliar, lotes amplios. Residencial medio-alto.'},
+  H2:  {nombre:'Habitacional densidad Media Baja', fam:'Habitacional', color:'#6ee7b7', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Unifamiliar / duplex. Vivienda media.'},
+  H3:  {nombre:'Habitacional densidad Media', fam:'Habitacional', color:'#34d399', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Vivienda media, duplex y conjuntos pequenos.'},
+  H5:  {nombre:'Habitacional densidad Media Alta', fam:'Habitacional', color:'#10b981', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Permite multifamiliar; viable departamentos.'},
+  H6:  {nombre:'Habitacional densidad Alta', fam:'Habitacional', color:'#047857', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Multifamiliar / vertical. Optimo para departamentos.'},
+  HE:  {nombre:'Habitacional Ejidal', fam:'Habitacional', color:'#065f46', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Verificar regularizacion de tenencia antes de desarrollar.'},
+  M1:  {nombre:'Mixto 1: habitacional con comercio', fam:'Mixto', color:'#fde68a', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Planta baja comercial + vivienda. Buen producto mixto.'},
+  M2:  {nombre:'Mixto 2: habitacional, comercio y servicios', fam:'Mixto', color:'#f59e0b', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Usos flexibles, alta demanda.'},
+  M3:  {nombre:'Mixto 3: habitacional, comercio, servicios e industria ligera', fam:'Mixto', color:'#b45309', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Maxima flexibilidad de uso.'},
+  'CU1.1': {nombre:'Corredor Urbano: habitacional, comercio y servicios', fam:'Corredor urbano', color:'#99f6e4', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Comercio, servicios y vivienda sobre vialidad principal. Alta exposicion comercial.'},
+  'CU1.2': {nombre:'Corredor Urbano: habitacional, comercio y servicios', fam:'Corredor urbano', color:'#5eead4', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Comercio, servicios y vivienda sobre vialidad principal.'},
+  CU2: {nombre:'Corredor Urbano: habitacional, comercio y servicios', fam:'Corredor urbano', color:'#14b8a6', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Comercio, servicios y vivienda sobre vialidad principal.'},
+  CU3: {nombre:'Corredor Urbano: comercio, servicios e industria', fam:'Corredor urbano', color:'#0f766e', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Comercio, servicios e industria sobre corredor. No residencial puro.'},
+  S:   {nombre:'Servicios', fam:'Servicios', color:'#38bdf8', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Oficinas, servicios profesionales y comerciales.'},
+  EAP: {nombre:'Administracion Publica y Servicios Urbanos', fam:'Equipamiento', color:'#c4b5fd', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento publico/institucional. Desarrollo privado limitado.'},
+  EAS: {nombre:'Equipamiento Asistencia Social', fam:'Equipamiento', color:'#ddd6fe', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento institucional.'},
+  ECA: {nombre:'Equipamiento Comercio y Abasto', fam:'Equipamiento', color:'#a78bfa', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento de comercio y abasto.'},
+  ECT: {nombre:'Equipamiento Comunicaciones y Transporte', fam:'Equipamiento', color:'#8b5cf6', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento de comunicaciones y transporte.'},
+  ECL: {nombre:'Equipamiento Cultural', fam:'Equipamiento', color:'#7c3aed', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento cultural.'},
+  EE:  {nombre:'Equipamiento Educacion', fam:'Equipamiento', color:'#9333ea', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento educativo.'},
+  EI:  {nombre:'Equipamiento Infraestructura', fam:'Equipamiento', color:'#6d28d9', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento de infraestructura.'},
+  ERD: {nombre:'Equipamiento Recreacion y Deporte', fam:'Equipamiento', color:'#c026d3', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento recreativo y deportivo.'},
+  ES:  {nombre:'Equipamiento Salud', fam:'Equipamiento', color:'#e879f9', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Equipamiento de salud.'},
+  AV:  {nombre:'Areas verdes y espacios abiertos', fam:'Equipamiento', color:'#86efac', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'No edificable (areas verdes / espacios abiertos).'},
+  IL:  {nombre:'Industria Ligera', fam:'Industrial', color:'#fca5a5', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Naves, logistica ligera. No habitacional.'},
+  IM:  {nombre:'Industria Mediana', fam:'Industrial', color:'#f87171', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Manufactura. No habitacional.'},
+  IP:  {nombre:'Industria Pesada', fam:'Industrial', color:'#dc2626', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'No apta para vivienda.'},
+  IE:  {nombre:'Industria Extractiva', fam:'Industrial', color:'#7f1d1d', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'No apta para vivienda.'},
+  AI:  {nombre:'Agroindustria', fam:'Industrial', color:'#a16207', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Uso especializado.'},
+  AR:  {nombre:'Agricola de Riego', fam:'Agricola', color:'#84cc16', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Suelo no urbanizable salvo cambio de uso.'},
+  ZC:  {nombre:'Zona de Conservacion', fam:'Conservacion', color:'#15803d', cos:null,cus:null,cas:null,niveles:null,usos:null, nota:'Desarrollo restringido / prohibido.'},
+};
+const _USO_FAM_ORDER = ['Habitacional','Mixto','Corredor urbano','Servicios','Equipamiento','Industrial','Agricola','Conservacion'];
+function usoNorm(simbologia) { return NORMATIVA_USO[usoCodigo(simbologia)] || null; }
+function getZoneColor(simbologia) { const n = usoNorm(simbologia); return n ? n.color : '#94a3b8'; }
+// Normativa PDDU Torreon 2022 por clave (COS/CUS/CAS/niveles/densidad/lote/usos),
+// extraida del SIG IMPLAN (data/implan_pddu/). Las claves de equipamiento sin coeficientes quedan vacias.
+const NORMATIVA_PDDU = {"H1":{"cos":"0.7","cus":"1.4","cas":"0.3","niveles":"2","densidad":"29","lote":"350","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Parques, jardines vecinales y de juegos infantiles; Casetas de vigilancia"},"H2":{"cos":"0.7","cus":"2.1","cas":"0.3","niveles":"3","densidad":"50","lote":"200","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+2 usos)"},"H3":{"cos":"0.7","cus":"2.1","cas":"0.3","niveles":"3","densidad":"63","lote":"160","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+2 usos)"},"H5":{"cos":"0.8","cus":"3.2","cas":"0.2","niveles":"4","densidad":"77","lote":"130","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+28 usos)"},"H6":{"cos":"0.8","cus":"3.2","cas":"0.2","niveles":"4","densidad":"95","lote":"105","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+36 usos)"},"HB":{"cos":"0.6","cus":"1.2","cas":"0.4","niveles":"2","densidad":"20","lote":"500","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Parques, jardines vecinales y de juegos infantiles; Casetas de vigilancia"},"HE":{"cos":"0.8","cus":"2.4","cas":"0.2","niveles":"3","densidad":"91","lote":"110","usos":"Vivienda unifamiliar; Carnicería, pollería, pescadería y venta de frutas, legumbres, lácteos, embutidos y otros perecederos; Papelería, mercería, cibercafé, dulcerías o confiterías, expendios de revistas y periódicos (+31 usos)"},"M1":{"cos":"0.8","cus":"4","cas":"0.2","niveles":"5 (hasta 8 c/Norma 8)","densidad":"110","lote":"91","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+34 usos)"},"M2":{"cos":"0.8","cus":"4","cas":"0.2","niveles":"5 (hasta 8 c/Norma 8)","densidad":"110","lote":"91","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+71 usos)"},"M3":{"cos":"0.8","cus":"4","cas":"0.2","niveles":"5 (hasta 8 c/Norma 8)","densidad":"110","lote":"91","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+77 usos)"},"CU1.1":{"cos":"0.8","cus":"9.6","cas":"0.2","niveles":"12","densidad":"110","lote":"91","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+84 usos)"},"CU1.2":{"cos":"0.8","cus":"9.6","cas":"0.2","niveles":"12 (hasta 15 c/Norma 8)","densidad":"110","lote":"91","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+89 usos)"},"CU2":{"cos":"0.8","cus":"4","cas":"0.2","niveles":"5 (hasta 8 c/Norma 8)","densidad":"110","lote":"91","usos":"Vivienda unifamiliar; Vivienda plurifamiliar horizontal; Vivienda plurifamiliar vertical (+41 usos)"},"CU3":{"cos":"0.8","cus":"4","cas":"0.2","niveles":"5 (hasta 8 c/Norma 8)","usos":"Farmacia o droguería alópata u homeópata y ópticas; Venta de perfumes, joyas, relojes, flores, ropa, accesorios de vestir, zapatos, telas, regalos y artesanías; Venta de productos y alimentos para animales (+85 usos)"},"IE":{"cos":"0.4","cus":"0.8","cas":"0.6","niveles":"2","usos":"Estación de ferrocarril; Estación de bomberos; Casetas de vigilancia; Antenas y/o infraestructura para la transmisión o repetición de telefonía y/o televisión"},"IL":{"cos":"0.8","cus":"1.6","cas":"0.2","niveles":"2","lote":"1","usos":"Tiendas de materiales de construcción y mantenimiento (no incluye elaboración); Ferretería y Tlapalería; Venta e instalación de refacciones, partes y accesorios de vehículos motorizados y no motorizados (+32 usos)"},"IM":{"cos":"0.8","cus":"1.6","cas":"0.2","niveles":"2","lote":"1","usos":"Tiendas de materiales de construcción y mantenimiento (no incluye elaboración); Ferretería y Tlapalería; Venta e instalación de refacciones, partes y accesorios de vehículos motorizados y no motorizados (+32 usos)"},"IP":{"cos":"0.8","cus":"1.6","cas":"0.2","niveles":"2","lote":"1","usos":"Tiendas de materiales de construcción y mantenimiento (no incluye elaboración); Ferretería y Tlapalería; Venta e instalación de refacciones, partes y accesorios de vehículos motorizados y no motorizados (+39 usos)"},"AI":{"cos":"0.05","cus":"0.1","niveles":"2","lote":"1","usos":"Mercado público; Parques, jardines vecinales y de juegos infantiles; Industria alimentaría (+8 usos)"},"AR":{"cos":"0.05","cus":"0.05","niveles":"1","densidad":"1","usos":"Vivienda aislada; Parques, jardines vecinales y de juegos infantiles; Estiércol o abonos orgánicos y vegetales (+7 usos)"},"AV":{"cos":"0.05","cus":"0.05","cas":"0.95","niveles":"1","usos":"Parques, jardines vecinales y de juegos infantiles; Zoológico, acuario y jardín botánico; Parque urbano (+2 usos)"},"ZC":{"cos":"0.025","cus":"0.025","niveles":"1","usos":"Vivienda aislada; Parques, jardines vecinales y de juegos infantiles; Parque urbano; Conservación, preservación y restauración de áreas naturales"},"EAP":{"usos":"Rastro; Sitios de taxis; Módulos de atención al público (+15 usos)"},"EAS":{"usos":"Sitios de taxis; Jardín de niños y guarderías; Casa cuna, casa hogar para menores o ancianos (+6 usos)"},"ECA":{"usos":"Sitios de taxis; Mercado público"},"ECL":{"usos":"Sitios de taxis; Biblioteca; Centro y casa cultural y galerías de arte; Seminarios, conventos y albergues"},"ECT":{"usos":"Sitios de taxis; Centrales y agencias de correos, telégrafos y teléfono; Estación de radio, cine y televisión"},"EE":{"usos":"Sitios de taxis; Jardín de niños y guarderías; Escuelas de educación básica, que incluye escuelas primarias, secundarias y de educación especial; Escuelas de educación media superior, que incluye preparatorias, vocacionales, institutos técnicos y de capacitación"},"EI":{"usos":"Casetas de vigilancia; Plantas potabilizadoras de agua y captación del acuífero; Estaciones de bombeo, reguladoras de presión y tanques de almacentamiento de agua (+6 usos)"},"ERD":{"usos":"Sitios de taxis; Cines; Parques, jardines vecinales y de juegos infantiles (+6 usos)"},"ES":{"usos":"Laboratorios médicos, dentales, patológicos y bioquímicos; Sitios de taxis; Consultorios, dispensarios médicos, unidades de primer contacto (+2 usos)"},"S":{"cos":"0.7","cus":"2.8","cas":"0.3","niveles":"4","usos":"Farmacia o droguería alópata u homeópata y ópticas; Venta de perfumes, joyas, relojes, flores, ropa, accesorios de vestir, zapatos, telas, regalos y artesanías; Venta de discos, libros, artículos musicales, deportivos y artísticos (+11 usos)"}};
+window.NORMATIVA_PDDU = NORMATIVA_PDDU;
 
 function usoCategoria(s) {
   s = (s || '').toLowerCase();
@@ -1637,35 +1730,10 @@ function usoCategoria(s) {
 
 function usoCodigo(s) { const m = (s || '').match(/\(([^)]+)\)\s*$/); return m ? m[1] : ''; }
 
-// Nota orientada a desarrollo segun la zona
+// Nota orientada a desarrollo segun la zona (de la tabla normativa)
 function usoDescripcion(simbologia) {
-  const cod = usoCodigo(simbologia);
-  const map = {
-    HB:'Habitacional muy baja densidad. Lotes grandes, residencial campestre. Flipping de casas amplias / premium.',
-    H1:'Habitacional densidad baja. Vivienda unifamiliar, lotes amplios. Residencial medio-alto.',
-    H2:'Habitacional densidad media baja. Unifamiliar / duplex. Vivienda media.',
-    H3:'Habitacional densidad media. Vivienda media, duplex y conjuntos pequenos.',
-    H5:'Habitacional densidad media alta. Permite multifamiliar; viable departamentos.',
-    H6:'Habitacional densidad alta. Multifamiliar / vertical. Optimo para departamentos.',
-    HE:'Habitacional ejidal. Verificar regularizacion de tenencia antes de desarrollar.',
-    M1:'Mixto 1: habitacional con comercio. Planta baja comercial + vivienda. Buen producto mixto.',
-    M2:'Mixto 2: habitacional con comercio y servicios. Usos flexibles, alta demanda.',
-    M3:'Mixto 3: habitacional, comercio, servicios e industria ligera. Maxima flexibilidad de uso.',
-    S:'Servicios. Oficinas, servicios profesionales y comerciales.',
-    IL:'Industria ligera. Naves, logistica ligera. No habitacional.',
-    IM:'Industria mediana. Manufactura. No habitacional.',
-    IP:'Industria pesada. No apta para vivienda.',
-    IE:'Industria extractiva. No apta para vivienda.',
-    AI:'Agroindustria. Uso especializado.',
-    AR:'Agricola de riego. Suelo no urbanizable salvo cambio de uso.',
-    ZC:'Zona de conservacion. Desarrollo restringido / prohibido.',
-    AV:'Areas verdes y espacios abiertos. No edificable (equipamiento).',
-  };
-  if (map[cod]) return map[cod];
-  const cat = usoCategoria(simbologia);
-  if (cat === 'Corredor urbano') return 'Corredor urbano: comercio, servicios y vivienda sobre vialidad principal. Alta exposicion comercial.';
-  if (cat === 'Equipamiento')    return 'Equipamiento urbano (publico/institucional). Desarrollo privado limitado.';
-  return 'Consultar reglamento de zonificacion del IMPLAN para usos permitidos.';
+  const n = usoNorm(simbologia);
+  return n ? n.nota : 'Consultar reglamento de zonificacion del IMPLAN para usos permitidos.';
 }
 
 async function cargarZonificacion() {
@@ -1746,41 +1814,49 @@ function dibujarZonificacion(data) {
 }
 
 function construirLeyendaUso() {
-  const cats = [
-    ['Habitacional','#60a5fa'], ['Mixto','#ec4899'], ['Corredor urbano','#f59e0b'],
-    ['Industrial','#f97316'], ['Servicios','#06b6d4'], ['Equipamiento','#a855f7'],
-    ['Agricola','#84cc16'], ['Conservacion','#16a34a'],
-  ];
-  document.getElementById('uso-legend').innerHTML =
-    '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:7px">Uso de suelo IMPLAN</div>' +
-    cats.map(([n,c]) => `<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px"><span style="width:12px;height:12px;border-radius:3px;background:${c};flex-shrink:0"></span><span style="color:var(--text)">${n}</span></div>`).join('') +
-    '<div style="font-size:9px;color:var(--muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px">Click una zona para detalle</div>';
+  const fams = {};
+  Object.entries(NORMATIVA_USO).forEach(([k, n]) => { (fams[n.fam] = fams[n.fam] || []).push([k, n.color]); });
+  let html = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:7px">Uso de suelo IMPLAN</div>';
+  _USO_FAM_ORDER.forEach(fam => {
+    const arr = fams[fam]; if (!arr) return;
+    html += `<div style="font-size:9px;color:var(--muted);font-weight:700;margin:6px 0 3px">${fam}</div><div style="display:flex;flex-wrap:wrap;gap:4px 8px">` +
+      arr.map(([k, c]) => `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:var(--text)"><span style="width:10px;height:10px;border-radius:2px;background:${c};flex-shrink:0"></span>${k}</span>`).join('') + '</div>';
+  });
+  html += '<div style="font-size:9px;color:var(--muted);margin-top:7px;border-top:1px solid var(--border);padding-top:5px">Click una zona para detalle (COS/CUS/CAS)</div>';
+  document.getElementById('uso-legend').innerHTML = html;
 }
 
 function mostrarUsoSidebar(simbologia, layer) {
-  if (_zonaSel && _zonaSel.setStyle) _zonaSel.setStyle({ weight: 0.7 });
+  if (_zonaSel && _zonaSel.setStyle) _zonaSel.setStyle({ weight: 0.5 });
   if (layer && layer.setStyle) { layer.setStyle({ weight: 2.5, color: '#0d1117' }); _zonaSel = layer; }
+  const clave = usoCodigo(simbologia) || '?';
+  const n = NORMATIVA_USO[clave] || null;
+  const p = (window.NORMATIVA_PDDU && NORMATIVA_PDDU[clave]) || {};
   const color = getZoneColor(simbologia);
-  const cod = usoCodigo(simbologia);
-  const cat = usoCategoria(simbologia);
-  const nombre = simbologia.replace(/\s*\([^)]+\)\s*$/, '');
-  document.getElementById('uso-sidebar-sub').textContent = cat + (cod ? ' · ' + cod : '');
+  const nombre = n ? n.nombre : simbologia.replace(/\s*\([^)]+\)\s*$/, '');
+  const fam = n ? n.fam : usoCategoria(simbologia);
+  const pend = '<span style="color:var(--muted)">Pendiente</span>';
+  const v = x => (x == null || x === '') ? pend : x;
+  const cell = (lbl, x) => `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 9px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">${lbl}</div><div style="font-size:14px;font-weight:700;color:var(--text);font-family:var(--mono)">${v(x)}</div></div>`;
+  document.getElementById('uso-sidebar-sub').textContent = fam + ' / ' + clave;
   document.getElementById('uso-sidebar-body').innerHTML = `
     <div class="hex-card">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <span style="width:34px;height:34px;border-radius:8px;background:${color};flex-shrink:0;box-shadow:0 0 0 1px var(--border)"></span>
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:12px">
+        <span style="min-width:48px;height:48px;border-radius:9px;background:${color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;font-size:15px;color:#0d1117;box-shadow:0 0 0 1px var(--border)">${clave}</span>
         <div>
-          <div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.25">${nombre}</div>
-          <div style="font-family:var(--mono);font-size:11px;color:var(--accent)">${cat}${cod?' · '+cod:''}</div>
+          <div style="font-size:13.5px;font-weight:700;color:var(--text);line-height:1.25">${nombre}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--accent)">${fam}</div>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--text);line-height:1.55;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px">
-        ${usoDescripcion(simbologia)}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px">
+        ${cell('COS', p.cos)}${cell('CUS', p.cus)}${cell('CAS', p.cas)}${cell('Niveles', p.niveles)}${cell('Dens viv/ha', p.densidad)}${cell('Lote m&sup2;', p.lote)}
       </div>
-      <div style="font-size:10px;color:var(--muted);margin-top:9px;line-height:1.5">
-        Fuente: Carta de zonificacion IMPLAN Torreon.<br>
-        Verifica el uso exacto y compatibilidades en el reglamento vigente antes de invertir.
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;margin-bottom:10px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">Usos permitidos</div>
+        <div style="font-size:12px;color:var(--text);line-height:1.5">${p.usos || pend}</div>
       </div>
+      <div style="font-size:12px;color:var(--text);line-height:1.55;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px">${n ? n.nota : 'Consultar reglamento IMPLAN.'}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:9px;line-height:1.5">Fuente: SIG IMPLAN Torreón &middot; Plan Director de Desarrollo Urbano (PDDU) 2022. Verifica el uso vigente antes de invertir.</div>
     </div>`;
   document.getElementById('uso-sidebar').classList.add('open');
 }
@@ -1917,7 +1993,7 @@ function buildHeatmap() {
       const {val,count,opacity,variable:v,hex} = f.properties;
       const cert = count >= 5 ? '🟢 Alta' : count >= 3 ? '🟡 Media' : count >= 2 ? '🟠 Baja' : '⚪ 1 pin (estimada)';
       let usoLine = '';
-      if (zonifData) { const cc = h3.cellToLatLng(hex); const uu = usoDeSueloEnPunto(cc[0], cc[1]); if (uu) usoLine = `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.14);color:#a7f3d0;font-size:10px">🗺 ${uu}</div>`; }
+      if (zonifData) { const cc = h3.cellToLatLng(hex); const uu = usoDeSueloEnPunto(cc[0], cc[1]); if (uu) { const cl = usoCodigo(uu) || '?'; const nn = NORMATIVA_USO[cl]; const pp = (window.NORMATIVA_PDDU && NORMATIVA_PDDU[cl]) || {}; const extra = pp.cos ? ` &middot; COS ${pp.cos}${pp.cus?' / CUS '+pp.cus:''}` : ''; usoLine = `<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.14);color:#a7f3d0;font-size:10px">🗺 <b>${cl}</b> ${nn?nn.fam:''}${extra}</div>`; } }
       const tipHtml = `
         <div style="font-family:var(--mono);font-size:12px;min-width:160px;color:#e8eaf0">
           <div style="font-size:18px;font-weight:700;color:#e8ff47">${heatFmt(val,v)}</div>
@@ -2285,16 +2361,21 @@ async function guardarPin() {
 
   if (!SUPABASE_URL || !SUPABASE_KEY) { alert('Sin conexión Supabase'); return; }
   try {
+    await cargarZonificacion();
+    const sim = usoDeSueloEnPunto(lat, lng);
+    const body = { lat, lng, ubicacion_manual: true, fecha_edicion: new Date().toISOString() };
+    if (sim) { body.uso_suelo = sim; body.uso_suelo_clave = usoCodigo(sim); body.uso_suelo_cat = usoCategoria(sim); }
     const r = await fetch(`${SUPABASE_URL}/rest/v1/listings?id=eq.${_pinListingId}`, {
       method: 'PATCH',
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
                  'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ lat, lng, editado_manualmente: true, fecha_edicion: new Date().toISOString() })
+      body: JSON.stringify(body)
     });
     if (!r.ok) throw new Error(await r.text());
 
     const idx = allData.findIndex(d => String(d.id) === String(_pinListingId));
-    if (idx >= 0) { allData[idx].lat = lat; allData[idx].lng = lng; }
+    if (idx >= 0) { allData[idx].lat = lat; allData[idx].lng = lng;
+      if (sim) { allData[idx].uso_suelo = sim; allData[idx].uso_suelo_clave = usoCodigo(sim); allData[idx].uso_suelo_cat = usoCategoria(sim); } }
 
     cerrarModalPin();
     renderValidacion();
@@ -2915,17 +2996,17 @@ async function generateReporteConsolidado() {
   const CENTER = window._lastDemoCenter;
   const RAD    = window._lastDemoRadius || 2;
   const title  = window._lastDemoTitle  || 'Zona de Influencia';
-  const sub     = window._lastDemoSubtitle || ('Radio ' + RAD + ' km');
+  const sub    = window._lastDemoSubtitle || ('Radio ' + RAD + ' km');
   if (!SUPABASE_URL || !SUPABASE_KEY) { alert('Configura credenciales Supabase primero (boton Config).'); return; }
 
   const st = document.getElementById('demo-status');
   if (st) st.textContent = 'Generando reporte consolidado...';
 
-  // ── 1. Traer oferta de mercado en el radio ────────────────────────────────
+  // 1. Oferta de mercado en el radio
   let zona = [];
   try {
     const delta = (RAD + 1) / 111;
-    const url = `${SUPABASE_URL}/rest/v1/listings?select=id,precio_mxn,m2_terreno,m2_construccion,precio_x_m2_terreno,precio_x_m2_construccion,tipo_inmueble,tipo_operacion,pagina_fuente,colonia,lat,lng,historial_precio,es_oportunidad,pct_vs_colonia&activo=eq.true&lat=gte.${CENTER.lat-delta}&lat=lte.${CENTER.lat+delta}&lng=gte.${CENTER.lng-delta}&lng=lte.${CENTER.lng+delta}&limit=1000`;
+    const url = `${SUPABASE_URL}/rest/v1/listings?select=id,precio_mxn,m2_terreno,m2_construccion,precio_x_m2_terreno,precio_x_m2_construccion,tipo_inmueble,tipo_operacion,pagina_fuente,colonia,lat,lng,historial_precio,es_oportunidad,pct_vs_colonia,uso_suelo_cat,recamaras,banos,amenidades,nivel_premium,estado_inmueble,pm2_promedio_colonia&activo=eq.true&lat=gte.${CENTER.lat-delta}&lat=lte.${CENTER.lat+delta}&lng=gte.${CENTER.lng-delta}&lng=lte.${CENTER.lng+delta}&limit=1000`;
     const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }});
     if (!r.ok) throw new Error('Supabase ' + r.status);
     let data = await r.json();
@@ -2933,36 +3014,107 @@ async function generateReporteConsolidado() {
     zona = data.filter(d => d.lat && d.lng && dKm(CENTER.lat,CENTER.lng,+d.lat,+d.lng) <= RAD);
   } catch(e) { if (st) st.textContent = 'Error: '+e.message; alert('No se pudo consultar el mercado: '+e.message); return; }
 
-  // ── 2. Helpers ─────────────────────────────────────────────────────────────
+  // 2. Helpers
   const f=(n,d=0)=>isNaN(n)||n==null?'&mdash;':(+n).toLocaleString('es-MX',{maximumFractionDigits:d,minimumFractionDigits:d});
   const money=n=>isNaN(n)||n==null?'&mdash;':'$'+f(n);
   const mm=n=>isNaN(n)||n==null?'&mdash;':'$'+f(n/1e6,2)+'M';
   const sgn=n=>(n>=0?'+':'')+f(n,1)+'%';
-  const median=a=>{if(!a.length)return null;const x=[...a].sort((p,q)=>p-q);return x[Math.floor(x.length/2)];};
+  const median=a=>{if(!a||!a.length)return null;const x=[...a].sort((p,q)=>p-q);return x[Math.floor(x.length/2)];};
   const pctile=(a,p)=>{if(!a.length)return null;const x=[...a].sort((m,n)=>m-n);return x[Math.max(0,Math.floor(x.length*p)-1)];};
   const sortObj=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]);
-  function hbar(label,val,max,color){const w=max?Math.max(2,Math.round(val/max*100)):2;color=color||'#10b981';return `<div style="margin-bottom:7px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">${label}</span><span style="font-family:'Space Mono',monospace;font-size:11px;color:#0d1117;font-weight:700">${val}</span></div><div style="height:6px;background:#eef0f3;border-radius:4px"><div style="height:6px;background:${color};border-radius:4px;width:${w}%"></div></div></div>`;}
+  const cap=str=>(str||'').replace(/\b\w/g,c=>c.toUpperCase());
+  function hbar(label,val,max,color){const w=max?Math.max(2,Math.round((parseFloat(val)||0)/max*100)):2;color=color||'#10b981';return `<div style="margin-bottom:7px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">${label}</span><span style="font-family:'Space Mono',monospace;font-size:11px;color:#0d1117;font-weight:700">${val}</span></div><div style="height:6px;background:#eef0f3;border-radius:4px"><div style="height:6px;background:${color};border-radius:4px;width:${w}%"></div></div></div>`;}
+  const bulletHtml=(t,txt)=>`<div style="display:flex;gap:8px;margin-bottom:8px;padding:9px 11px;border-radius:7px;font-size:11px;line-height:1.5;background:${t==='warn'?'#fffbeb':t==='ok'?'#ecfdf5':'#f0fdfa'};border-left:3px solid ${t==='warn'?'#d97706':t==='ok'?'#059669':'#0d9488'}"><span style="flex-shrink:0;font-weight:700;color:${t==='warn'?'#d97706':t==='ok'?'#059669':'#0d9488'}">${t==='warn'?'&#9888;':t==='ok'?'&#10003;':'&rarr;'}</span><span>${txt}</span></div>`;
 
-  // ── 3. Metricas de mercado ─────────────────────────────────────────────────
+  // 3. Metricas de mercado
   const total = zona.length;
-  const byTipo={}, byPortal={};
-  zona.forEach(d=>{const t=(d.tipo_inmueble||'otro').replace(/_/g,' ');byTipo[t]=(byTipo[t]||0)+1;const p=(d.pagina_fuente||'otro').replace('inmuebles24','i24').replace('propiedades.com','prop.com').replace('mercadolibre','ML').replace('remax_laguna','ReMax');byPortal[p]=(byPortal[p]||0)+1;});
+  const byTipo={}, byPortal={}, byOp={};
+  zona.forEach(d=>{const t=(d.tipo_inmueble||'otro').replace(/_/g,' ');byTipo[t]=(byTipo[t]||0)+1;const p=(d.pagina_fuente||'otro').replace('inmuebles24','i24').replace('propiedades.com','prop.com').replace('mercadolibre','ML').replace('remax_laguna','ReMax');byPortal[p]=(byPortal[p]||0)+1;const o=d.tipo_operacion||'otro';byOp[o]=(byOp[o]||0)+1;});
   const ventas = zona.filter(d=>d.tipo_operacion==='venta'&&d.precio_mxn>0).map(d=>d.precio_mxn);
   const medP=median(ventas), p25P=pctile(ventas,.25), p75P=pctile(ventas,.75);
   const terr = zona.filter(d=>(d.tipo_inmueble||'').startsWith('terreno')&&d.precio_x_m2_terreno>0).map(d=>d.precio_x_m2_terreno);
   const medPm2=median(terr); const BENCH_PM2=4850;
   const benchDiff = medPm2&&BENCH_PM2 ? ((medPm2-BENCH_PM2)/BENCH_PM2)*100 : null;
-  // Presion de precios (historial)
   let conHist=0,bajaron=0,sumRed=0;
   zona.forEach(d=>{let h=d.historial_precio;if(typeof h==='string'){try{h=JSON.parse(h);}catch(e){h=null;}}if(!Array.isArray(h)||h.length<2)return;conHist++;const a=h[0].precio||h[0].price||0,b=h[h.length-1].precio||h[h.length-1].price||0;if(!a||!b)return;if(b<a*0.99){bajaron++;sumRed+=((a-b)/a)*100;}});
   const pctBaj = conHist?Math.round(bajaron/conHist*100):0;
   const presion = pctBaj>=35?'ALTA':pctBaj>=20?'MEDIA':'BAJA';
   const opps = zona.filter(d=>d.es_oportunidad&&d.pct_vs_colonia<0).sort((a,b)=>(a.pct_vs_colonia||0)-(b.pct_vs_colonia||0)).slice(0,5);
+  const terrenosCnt = zona.filter(d=>(d.tipo_inmueble||'').startsWith('terreno')).length;
 
-  // ── 4. Perfil sociodemografico / persona ───────────────────────────────────
+  // 3b. $/m2 por operacion x tipo de inmueble
+  function statsCruce(op){
+    const sub2=zona.filter(d=>d.tipo_operacion===op);
+    const grp={};
+    sub2.forEach(d=>{const t=(d.tipo_inmueble||'otro').replace(/_/g,' ');(grp[t]=grp[t]||[]).push(d);});
+    return Object.entries(grp).map(([t,arr])=>{
+      const precios=arr.map(d=>d.precio_mxn).filter(x=>x>0);
+      const esTerr=t.startsWith('terreno');
+      const pm2=arr.map(d=>esTerr?d.precio_x_m2_terreno:d.precio_x_m2_construccion).filter(x=>x>0);
+      return {tipo:t,n:arr.length,medPrecio:median(precios),medPm2:median(pm2),esTerr};
+    }).sort((a,b)=>b.n-a.n);
+  }
+  const cruceVenta=statsCruce('venta'), cruceRenta=statsCruce('renta');
+  function cruceTable(lbl, rows){
+    if(!rows.length) return `<div style="font-size:10px;color:#9ca3af;padding:8px 0">Sin oferta de ${lbl.toLowerCase()} en el radio.</div>`;
+    return `<table><tr><th>Tipo</th><th style="text-align:right">N</th><th style="text-align:right">Precio med.</th><th style="text-align:right">$/m&sup2;</th></tr>${rows.map(r=>`<tr><td style="text-transform:capitalize">${r.tipo}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.n}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.medPrecio?mm(r.medPrecio):'&mdash;'}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.medPm2?money(Math.round(r.medPm2)):'&mdash;'}<span style="font-size:8px;color:#9ca3af"> ${r.esTerr?'terr':'const'}</span></td></tr>`).join('')}</table>`;
+  }
+  const usoCount={}; zona.forEach(d=>{if(d.uso_suelo_cat){usoCount[d.uso_suelo_cat]=(usoCount[d.uso_suelo_cat]||0)+1;}});
+  const usoTop=sortObj(usoCount).slice(0,3);
+
+  // 3c. Analitica avanzada (Inteligencia de Mercado)
+  // Colonia avg $/m2 terreno (para flip residual y ranking)
+  const colTerr={};
+  zona.forEach(d=>{ if((d.tipo_inmueble||'').startsWith('terreno') && d.precio_x_m2_terreno>0){ const c=d.colonia||'(s/c)'; (colTerr[c]=colTerr[c]||[]).push(d.precio_x_m2_terreno); }});
+  const colPm2={}; Object.entries(colTerr).forEach(([c,a])=>{ if(a.length>=2) colPm2[c]=median(a); });
+  const globalPm2 = medPm2 || median(Object.values(colPm2)) || BENCH_PM2;
+  const coloniaPm2 = c => (colPm2[c]!=null?colPm2[c]:globalPm2);
+  // D. Flip residual (construidos en venta)
+  const flipCand = zona.filter(d=>d.tipo_operacion==='venta' && !(d.tipo_inmueble||'').startsWith('terreno') && d.m2_construccion>0 && d.precio_mxn>0)
+    .map(d=>{ const vt=(d.m2_terreno>0?d.m2_terreno:0)*coloniaPm2(d.colonia||'(s/c)'); const vc=d.precio_mxn-vt; const m2cReal=vc>0?vc/d.m2_construccion:null; return {colonia:d.colonia,tipo:d.tipo_inmueble,precio:d.precio_mxn,m2c:d.m2_construccion,vt,vc,m2cReal}; })
+    .filter(x=>x.m2cReal!=null && x.m2cReal>0)
+    .sort((a,b)=>a.m2cReal-b.m2cReal).slice(0,6);
+  // B. Ranking de colonias
+  const colAgg={};
+  zona.forEach(d=>{ const c=d.colonia||'(s/c)'; const o=colAgg[c]=colAgg[c]||{n:0,prec:[],pm2:[],opp:0}; o.n++; if(d.tipo_operacion==='venta'&&d.precio_mxn>0)o.prec.push(d.precio_mxn); if((d.tipo_inmueble||'').startsWith('terreno')&&d.precio_x_m2_terreno>0)o.pm2.push(d.precio_x_m2_terreno); if(d.es_oportunidad&&d.pct_vs_colonia<0)o.opp++; });
+  const ranking=Object.entries(colAgg).map(([c,o])=>({col:c,n:o.n,med:median(o.prec),pm2:median(o.pm2),opp:o.opp,oppPct:o.n?o.opp/o.n*100:0})).sort((a,b)=>b.n-a.n).slice(0,9);
+  // C. Yield renta/venta por tipo
+  const tipoBase = t => (t||'otro').replace(/_/g,' ');
+  const yieldRows=[];
+  { const tipos=[...new Set(zona.map(d=>tipoBase(d.tipo_inmueble)))];
+    tipos.forEach(t=>{ const v=zona.filter(d=>tipoBase(d.tipo_inmueble)===t&&d.tipo_operacion==='venta'&&d.precio_mxn>0).map(d=>d.precio_mxn); const r=zona.filter(d=>tipoBase(d.tipo_inmueble)===t&&d.tipo_operacion==='renta'&&d.precio_mxn>0).map(d=>d.precio_mxn); const mv=median(v),mr=median(r); if(mv&&mr){ yieldRows.push({tipo:t,nv:v.length,nr:r.length,mv,mr,yield:mr*12/mv*100}); } });
+    yieldRows.sort((a,b)=>b.yield-a.yield); }
+  const allV=zona.filter(d=>d.tipo_operacion==='venta'&&d.precio_mxn>0).map(d=>d.precio_mxn);
+  const allR=zona.filter(d=>d.tipo_operacion==='renta'&&d.precio_mxn>0).map(d=>d.precio_mxn);
+  const yieldGlobal=(median(allV)&&median(allR))?median(allR)*12/median(allV)*100:null;
+  // A. Vacio de mercado: bandas de precio venta vs capacidad NSE
+  const bands=[[0,1e6,'&lt; $1M'],[1e6,2e6,'$1&ndash;2M'],[2e6,3e6,'$2&ndash;3M'],[3e6,5e6,'$3&ndash;5M'],[5e6,Infinity,'$5M+']];
+  const ventaPrices=zona.filter(d=>d.tipo_operacion==='venta'&&d.precio_mxn>0).map(d=>d.precio_mxn);
+  const ofertaBand=bands.map(([lo,hi])=>ventaPrices.filter(p=>p>=lo&&p<hi).length);
+  const ofertaTot=ventaPrices.length||1;
+  const nseToBand={ ab:[0,0,0,0.6,0.4], cmas:[0,0,0.5,0.5,0], c:[0,0.5,0.5,0,0], cmenos:[0.5,0.5,0,0,0], dmas:[0.6,0.4,0,0,0], d:[1,0,0,0,0], e:[1,0,0,0,0] };
+  const nseCounts={ab:s.nse_ab,cmas:s.nse_cmas,c:s.nse_c,cmenos:s.nse_cmenos,dmas:s.nse_dmas,d:s.nse_d,e:s.nse_e};
+  const demandaBand=[0,0,0,0,0];
+  Object.entries(nseToBand).forEach(([k,w])=>{ const cnt=nseCounts[k]||0; w.forEach((ww,i)=>demandaBand[i]+=cnt*ww); });
+  const demTot=demandaBand.reduce((a,b)=>a+b,0)||1;
+  const gapRows=bands.map((bd,i)=>{ const oPct=ofertaBand[i]/ofertaTot*100, dPct=demandaBand[i]/demTot*100; return {lbl:bd[2],o:ofertaBand[i],oPct,dPct,gap:dPct-oPct}; });
+  const gapTop=[...gapRows].sort((a,b)=>b.gap-a.gap)[0];
+  // E. Mix de producto
+  const recDist={'1':0,'2':0,'3':0,'4+':0}; let recN=0;
+  zona.forEach(d=>{ if(d.recamaras!=null){ recN++; const r=+d.recamaras; if(r<=1)recDist['1']++;else if(r===2)recDist['2']++;else if(r===3)recDist['3']++;else recDist['4+']++; }});
+  const m2cArr=zona.filter(d=>d.m2_construccion>0).map(d=>d.m2_construccion); const m2cMed=median(m2cArr);
+  const estDist={}; let estN=0; zona.forEach(d=>{ if(d.estado_inmueble&&d.estado_inmueble!=='no_especificado'){ estN++; estDist[d.estado_inmueble]=(estDist[d.estado_inmueble]||0)+1; }});
+  const premDist={}; let premN=0; zona.forEach(d=>{ if(d.nivel_premium){ premN++; premDist[d.nivel_premium]=(premDist[d.nivel_premium]||0)+1; }});
+  // F. Amenidades
+  const amenCount={}; let amenN=0;
+  zona.forEach(d=>{ let a=d.amenidades; if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}} if(Array.isArray(a)&&a.length){ amenN++; a.forEach(x=>{ const k=String(x).replace(/_/g,' ').replace(/[^\x20-\x7e]/g,'').replace(/\s+/g,' ').trim(); if(k)amenCount[k]=(amenCount[k]||0)+1; }); }});
+  const amenTop=sortObj(amenCount).slice(0,10);
+
+  // 4. Perfil sociodemografico / persona
   const score = calcScore(s); const [slbl] = scoreLabel(score);
   const pct_alto = s.nse_total ? (s.nse_ab+s.nse_cmas)/s.nse_total*100 : 0;
   const pct_c    = s.nse_total ? s.nse_c/s.nse_total*100 : 0;
+  const pct_bajo = s.nse_total ? (s.nse_cmenos+s.nse_dmas+s.nse_d+s.nse_e)/s.nse_total*100 : 0;
   let nseLabel, ingresoRange, productType, habitType, pLow, pHigh;
   if (pct_alto>=30){ nseLabel='A/B + C+'; ingresoRange='$35,000&ndash;$85,000+/mes'; productType='Residencial Plus / Premium'; habitType='Depto o casa 2&ndash;3 rec, amenidades completas'; pLow=3.5e6; pHigh=7e6; }
   else if (pct_alto>=15){ nseLabel='C+ dominante'; ingresoRange='$35,000&ndash;$85,000/mes'; productType='Residencial / Residencial Plus'; habitType='Depto 2&ndash;3 rec, fraccionamiento cerrado'; pLow=2.5e6; pHigh=5e6; }
@@ -2970,11 +3122,24 @@ async function generateReporteConsolidado() {
   else { nseLabel='C&minus; / D+'; ingresoRange='$6,800&ndash;$11,600/mes'; productType='Vivienda Popular / Interes Social'; habitType='Vivienda minima, Infonavit/subsidio'; pLow=0.5e6; pHigh=1.2e6; }
   const ageCorto = s.pct_60>=20 ? ('Poblacion 60+ relevante ('+f(s.pct_60,1)+'%)') : s.pct_25_59>=44 ? ('Adultos 25&ndash;59 dominantes ('+f(s.pct_25_59,1)+'%)') : ('Cohorte joven 15&ndash;24 ('+f(s.pct_15_24,1)+'%)');
 
-  // ── 5. RECOMENDACION (que / a quien / cuantos / precio / por que) ───────────
+  // 4b. Benchmark municipal + score breakdown + bullets
+  const b = {pob_total:700595,hog_total:209771,viv_habitadas:209864,pea:348898,escolaridad:11.12,densidad_pob:4472.2,pct_pea:49.8,pct_viv_des:14.6,pct_0_14:24.6,pct_15_24:16.8,pct_25_59:46.5,pct_60mas:12.2,crec_pob:13.2,crec_hog:29.0,crec_viv:-3.3,prom_hnv:1.93};
+  const scoreColor = score>=8?'#059669':score>=6?'#0d9488':score>=4?'#d97706':'#dc2626';
+  const scoreBg    = score>=8?'#ecfdf5':score>=6?'#f0fdfa':score>=4?'#fffbeb':'#fef2f2';
+  const bullets=[];
+  if(s.crec_pob<0) bullets.push(['warn','Poblacion en <strong>contraccion de '+f(Math.abs(s.crec_pob),1)+'%</strong> 2010&ndash;2020 (municipio '+sgn(b.crec_pob)+'). Posible migracion o deterioro del parque.']);
+  else if(s.crec_pob>30) bullets.push(['ok','<strong>Crecimiento acelerado +'+f(s.crec_pob,1)+'%</strong> en poblacion (municipio '+sgn(b.crec_pob)+'). Mercado en expansion.']);
+  else bullets.push(['info','Crecimiento poblacional <strong>'+sgn(s.crec_pob)+'</strong> 2010&ndash;2020 (municipio '+sgn(b.crec_pob)+'). Dinamica comparable al promedio.']);
+  if(s.pct_viv_des>20) bullets.push(['warn','Vacancia alta: <strong>'+f(s.pct_viv_des,1)+'%</strong> deshabitadas (umbral 12%). Evaluar demanda antes de oferta nueva.']);
+  else if(s.pct_viv_des>12) bullets.push(['info','Vacancia moderada: <strong>'+f(s.pct_viv_des,1)+'%</strong> deshabitadas. Monitorear absorcion.']);
+  else bullets.push(['ok','Vacancia saludable: <strong>'+f(s.pct_viv_des,1)+'%</strong> deshabitadas. Parque utilizado activamente.']);
+  if(pct_alto>=30) bullets.push(['ok','Concentracion NSE alto (AB+C+): <strong>'+f(pct_alto,1)+'%</strong>. Capacidad de pago solida para residencial media-alta.']);
+  if(s.pct_60>20) bullets.push(['warn','Poblacion envejecida: '+f(s.pct_60,1)+'% mayores de 60. Demanda de unidades compactas en planta baja y cercania a salud.']);
+
+  // 5. RECOMENDACION (que / a quien / cuantos / precio / por que)
   const tipoDom = sortObj(byTipo)[0] ? sortObj(byTipo)[0][0] : null;
-  const queStr  = `<strong>${productType}</strong>. Formato: ${habitType}.` + (tipoDom ? ` Oferta activa dominante en zona: ${tipoDom}.` : '');
+  const queStr  = `<strong>${productType}</strong>. Formato: ${habitType}.` + (tipoDom ? ` Oferta activa dominante en zona: ${tipoDom}.` : '') + (gapTop&&gapTop.gap>5?` Banda desabastecida: ${gapTop.lbl}.`:'');
   const quienStr= `NSE <strong>${nseLabel}</strong> &middot; ingreso ${ingresoRange}. ${ageCorto}. Escolaridad media ${f(s.escolaridad,1)} a&ntilde;os.`;
-  // Demanda potencial: formacion neta de hogares (decada 2010-2020 anualizada) x captura del segmento
   const annualNewHog = (s.hog>0 && s.crec_hog>0) ? s.hog*(s.crec_hog/100)/10 : 0;
   const segShare = pct_alto>=15 ? pct_alto/100 : (pct_c>0?pct_c/100:0.15);
   const demBase = Math.round(annualNewHog*(segShare||0.15));
@@ -2984,16 +3149,20 @@ async function generateReporteConsolidado() {
     : `Formacion de hogares baja o negativa: enfoque en <strong>sustitucion/reposicion</strong>, no en oferta nueva masiva. Validar absorcion antes de desarrollar.`;
   const bandLow = p25P || pLow, bandHigh = p75P || pHigh;
   const precioMercadoNota = ventas.length>=4 ? `Banda empirica P25&ndash;P75 de ${ventas.length} ventas en zona.` : `Banda de referencia por NSE (oferta de venta insuficiente: ${ventas.length}).`;
-  const precioStr = `<strong>${mm(bandLow)} &ndash; ${mm(bandHigh)} MXN</strong>. ${precioMercadoNota}` + (medPm2 ? ` Terreno mediana zona: ${money(Math.round(medPm2))}/m&sup2;` + (benchDiff!=null?` (${sgn(benchDiff)} vs benchmark $${f(BENCH_PM2)}/m&sup2;).`:'.') : '.');
+  const precioStr = `<strong>${mm(bandLow)} &ndash; ${mm(bandHigh)} MXN</strong>. ${precioMercadoNota}` + (medPm2 ? ` Terreno mediana zona: ${money(Math.round(medPm2))}/m&sup2;` + (benchDiff!=null?` (${sgn(benchDiff)} vs benchmark $${f(BENCH_PM2)}/m&sup2;).`:'.') : '.') + (yieldGlobal!=null?` Yield bruto de renta ~${f(yieldGlobal,1)}%.`:'');
   const benchTxt = benchDiff==null?'':(benchDiff>15?`Zona premium (${sgn(benchDiff)} vs benchmark $/m&sup2;).`:benchDiff<-15?`Zona con descuento (${sgn(benchDiff)} vs benchmark $/m&sup2;): posible ventana de entrada.`:`$/m&sup2; alineado al benchmark municipal (${sgn(benchDiff)}).`);
   const presionTxt = conHist<3?'Historial de precios insuficiente para tendencia.':presion==='ALTA'?`Presion vendedora ALTA: ${pctBaj}% de los listings bajaron precio.`:presion==='MEDIA'?`Presion MEDIA: ${pctBaj}% ajustaron a la baja.`:`Presion BAJA: solo ${pctBaj}% redujo precio (oferta firme).`;
-  const porqueStr = `Score sociodemografico <strong>${score}/10 (${slbl})</strong>. ${presionTxt} ${benchTxt}`;
+  const porqueStr = `Score sociodemografico <strong>${score}/10 (${slbl})</strong>. ${presionTxt} ${benchTxt}` + (gapTop&&gapTop.gap>5?` Vacio de mercado en ${gapTop.lbl} (+${f(gapTop.gap,0)}pp demanda vs oferta).`:'');
 
   const recRow=(q,a)=>`<div style="padding:13px 0;border-bottom:1px solid #eef0f3"><div style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#10b981;margin-bottom:4px">${q}</div><div style="font-size:13px;color:#0d1117;line-height:1.5">${a}</div></div>`;
+  const percRow=(l,v,n)=>`<tr><td style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af">${l}</td><td style="text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:#0d1117">${v}</td><td style="font-size:10px;color:#6b7280">${n||''}</td></tr>`;
+  const oppRows = opps.length ? opps.map(d=>`<tr><td>${(d.colonia||'&mdash;')}</td><td style="text-transform:capitalize">${(d.tipo_inmueble||'').replace(/_/g,' ')}</td><td style="text-align:right;font-family:'Space Mono',monospace">${money(d.precio_mxn)}</td><td style="text-align:right;font-family:'Space Mono',monospace;color:#059669;font-weight:700">${f(d.pct_vs_colonia,1)}%</td></tr>`).join('') : `<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:14px">Sin oportunidades detectadas bajo el promedio de colonia.</td></tr>`;
 
-  const TP = 7;
+  const nseItems2=[['A/B',s.nse_ab,'#065f46'],['C+',s.nse_cmas,'#059669'],['C',s.nse_c,'#10b981'],['C-',s.nse_cmenos,'#34d399'],['D+',s.nse_dmas,'#6ee7b7'],['D',s.nse_d,'#fbbf24'],['E',s.nse_e,'#f59e0b']].filter(x=>x[1]>0);
 
-  // ── PAGE 1 — PORTADA ───────────────────────────────────────────────────────
+  const TP = 12;
+
+  // PAGE 1 - PORTADA
   const kpis = [
     ['Score Zona', score+'/10', slbl],
     ['NSE Objetivo', nseLabel, 'perfil dominante'],
@@ -3019,184 +3188,362 @@ async function generateReporteConsolidado() {
       <div style="margin:26px 46px 0"><div class="ruled"></div></div>
       <div style="padding:20px 46px 0">
         <div class="eyebrow" style="margin-bottom:8px">Objeto del reporte</div>
-        <div style="font-size:12.5px;color:#374151;line-height:1.65;max-width:62ch">Documento de soporte para la toma de decisiones de desarrollo inmobiliario. Cruza el perfil sociodemografico del radio de influencia (INEGI 2020 + AMAI) con la oferta inmobiliaria activa capturada semanalmente, y sintetiza una <strong>recomendacion de producto, segmento, escala y precio</strong> para la zona analizada.</div>
+        <div style="font-size:12.5px;color:#374151;line-height:1.65;max-width:62ch">Documento de soporte para la toma de decisiones de desarrollo e inversion inmobiliaria. Cruza el perfil sociodemografico del radio (INEGI 2020 + AMAI) con la oferta activa, analitica de mercado avanzada (vacio de mercado, colonias, rentabilidad, flip) y cierra con una <strong>recomendacion de producto, segmento, escala y precio</strong> que recapitula demografia y benchmark.</div>
       </div>
     </div>
     ${faroFooter('FARO &middot; COEZA Consulting &middot; Confidencial &middot; Uso interno para toma de decisiones')}
   </div>`;
 
-  // ── PAGE 2 — INDICE ────────────────────────────────────────────────────────
-  const idx=[['01','Resumen Ejecutivo &amp; Recomendacion','03'],['02','Perfil Sociodemografico','04'],['03','Analisis de Mercado','05'],['04','Fuentes y Metodologia','06'],['05','Glosario','07']];
+  // PAGE 2 - INDICE
+  const idx=[['01','Perfil Sociodemografico','03'],['02','Analisis de Mercado','05'],['03','Inteligencia de Mercado','07'],['04','Conclusion y Recomendacion','10'],['05','Fuentes y Metodologia','11'],['06','Glosario','12']];
   const PAGE2 = `<div class="page">
     ${faroLetterhead(title, sub, 'Indice', 2, TP)}
     <div style="padding:26px 46px;flex:1">
       <div style="font-family:'Sora',sans-serif;font-size:1.5rem;font-weight:800;color:#0d1117;margin-bottom:6px">Indice</div>
       <div style="font-size:12px;color:#9ca3af;margin-bottom:24px">${title} &middot; ${sub}</div>
-      ${idx.map(([n,t,p])=>`<div style="display:flex;align-items:baseline;gap:14px;padding:14px 0;border-bottom:1px solid #eef0f3">
+      ${idx.map(([n,t,p])=>`<div style="display:flex;align-items:baseline;gap:14px;padding:13px 0;border-bottom:1px solid #eef0f3">
         <span style="font-family:'Space Mono',monospace;font-size:12px;color:#10b981;font-weight:700">${n}</span>
         <span style="font-family:'Sora',sans-serif;font-size:15px;color:#0d1117;font-weight:600;flex:1">${t}</span>
         <span style="flex:1;border-bottom:1px dotted #d1d5db;transform:translateY(-4px)"></span>
         <span style="font-family:'Space Mono',monospace;font-size:12px;color:#9ca3af">p.${p}</span>
       </div>`).join('')}
-      <div class="card" style="margin-top:28px;background:#f0fdf4;border-color:#bbf7d0">
+      <div class="card" style="margin-top:24px;background:#f0fdf4;border-color:#bbf7d0">
         <div class="eyebrow" style="margin-bottom:7px">Como leer este reporte</div>
-        <div style="font-size:11.5px;color:#374151;line-height:1.6">La <strong>Recomendacion</strong> (seccion 01) es la sintesis accionable. Las secciones 02 y 03 contienen la evidencia que la sustenta. Las cifras de demanda son <strong>estimaciones orientativas</strong>, no proyecciones financieras; validar con levantamiento de campo antes de comprometer inversion.</div>
+        <div style="font-size:11.5px;color:#374151;line-height:1.6">Las secciones <strong>01 Perfil</strong>, <strong>02 Mercado</strong> e <strong>03 Inteligencia</strong> son la evidencia. La <strong>Conclusion (04)</strong> es la sintesis accionable que cruza demanda (perfil) y oferta (mercado + benchmark): que / a quien / a cuantos / a que precio. Las cifras de demanda son <strong>estimaciones orientativas</strong>; validar con levantamiento de campo antes de comprometer inversion.</div>
       </div>
     </div>
     ${faroFooter()}
   </div>`;
 
-  // ── PAGE 3 — RESUMEN EJECUTIVO + RECOMENDACION ─────────────────────────────
+  // PAGE 3 - PERFIL SOCIODEMOGRAFICO (1/2)
   const PAGE3 = `<div class="page">
-    ${faroLetterhead(title, sub, '01 &middot; Resumen Ejecutivo &amp; Recomendacion', 3, TP)}
-    <div style="padding:22px 28px;flex:1">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <div style="font-family:'Sora',sans-serif;font-size:1.45rem;font-weight:800;color:#0d1117">Recomendacion de Mercado</div>
-        <span class="pill">Score ${score}/10 &middot; ${slbl}</span>
-      </div>
-      <div style="font-size:12px;color:#6b7280;margin-bottom:18px">Sintesis accionable cruzando demanda (perfil) con oferta (mercado activo).</div>
-      <div class="card" style="border-left:none;border-top:3px solid #10b981">
-        ${recRow('&iquest;Que desarrollar?', queStr)}
-        ${recRow('&iquest;A quien?', quienStr)}
-        ${recRow('&iquest;A cuantos? (demanda potencial)', cuantosStr)}
-        ${recRow('&iquest;A que precio?', precioStr)}
-        <div style="padding:13px 0 2px"><div style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#10b981;margin-bottom:4px">&iquest;Por que?</div><div style="font-size:13px;color:#0d1117;line-height:1.5">${porqueStr}</div></div>
-      </div>
-      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div class="card">
-          <div class="eyebrow" style="margin-bottom:9px">Senales de demanda (perfil)</div>
-          ${hbar('Crecimiento poblacion 2010&ndash;20', f(s.crec_pob,1)+'%', 40, s.crec_pob>=0?'#10b981':'#ef4444')}
-          ${hbar('Cohorte compradora 25&ndash;59', f(s.pct_25_59,1)+'%', 60)}
-          ${hbar('PEA activa', f(s.pct_pea,1)+'%', 60)}
-          ${hbar('NSE medio-alto (AB+C+)', f(pct_alto,1)+'%', 60, '#059669')}
+    ${faroLetterhead(title, sub, '01 &middot; Perfil Sociodemografico (1/2)', 3, TP)}
+    <div style="padding:20px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+        <div style="background:${scoreBg};border-radius:10px;padding:10px 18px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:2.4rem;font-weight:800;color:${scoreColor};line-height:1">${score}</span>
+          <div><div style="font-size:13px;font-weight:800;color:${scoreColor}">${slbl}</div><div style="font-size:9px;color:#9ca3af">Score de zona &middot; INEGI 2020</div></div>
         </div>
-        <div class="card">
-          <div class="eyebrow" style="margin-bottom:9px">Senales de oferta (mercado)</div>
-          ${hbar('Oferta activa en radio', f(total), Math.max(total,10), '#0d9488')}
-          ${hbar('Presion vendedora', presion+' ('+pctBaj+'%)', 100, presion==='ALTA'?'#ef4444':presion==='MEDIA'?'#f59e0b':'#10b981')}
-          ${hbar('Oportunidades bajo mercado', f(opps.length), Math.max(opps.length,5), '#059669')}
-          ${hbar('Vacancia habitacional', f(s.pct_viv_des,1)+'%', 30, s.pct_viv_des>20?'#ef4444':s.pct_viv_des>12?'#f59e0b':'#10b981')}
+        <div style="flex:1;font-size:11px;color:#6b7280;line-height:1.5">Indice 0&ndash;10 sobre 5 dimensiones: crecimiento, cohorte compradora 25&ndash;59, ocupacion habitacional, PEA y concentracion NSE medio-alto.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px">
+        ${[['Poblacion',f(s.pob)],['Hogares',f(s.hog)],['PEA activa',f(s.pct_pea,1)+'%'],['Escolaridad',f(s.escolaridad,1)+' a&ntilde;os']].map(k=>`<div class="card" style="padding:11px 13px"><div style="font-size:1.3rem;font-weight:800;color:#0d1117">${k[1]}</div><div class="kpi-lbl">${k[0]}</div></div>`).join('')}
+      </div>
+      <div class="card" style="background:#f0fdf4;border-color:#bbf7d0;margin-bottom:16px">
+        <div class="eyebrow" style="margin-bottom:10px">Buyer persona &middot; perfil de demanda</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 18px">
+          ${[['NSE dominante',nseLabel],['Ingreso estimado',ingresoRange],['Producto sugerido',productType],['Tipologia',habitType]].map(p=>`<div><div style="font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#9ca3af">${p[0]}</div><div style="font-size:11.5px;font-weight:600;color:#0d1117">${p[1]}</div></div>`).join('')}
         </div>
       </div>
-    </div>
-    ${faroFooter()}
-  </div>`;
-
-  // ── PAGE 4 — DEMOGRAFIA ────────────────────────────────────────────────────
-  const nseRows = [['A/B',s.nse_ab],['C+',s.nse_cmas],['C',s.nse_c],['C-',s.nse_cmenos],['D+',s.nse_dmas],['D',s.nse_d],['E',s.nse_e]];
-  const PAGE4 = `<div class="page">
-    ${faroLetterhead(title, sub, '02 &middot; Perfil Sociodemografico', 4, TP)}
-    <div style="padding:22px 28px;flex:1;display:grid;grid-template-columns:1fr 1fr;gap:26px;align-content:start">
-      <div>
-        <div class="h-sec">Poblacion y vivienda</div>
-        <table>
-          <tr><th>Indicador</th><th style="text-align:right">Zona</th><th style="text-align:right">Municipio</th></tr>
-          <tr><td>Poblacion total</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pob)}</td><td style="text-align:right;color:#9ca3af">700,595</td></tr>
-          <tr><td>Hogares</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.hog)}</td><td style="text-align:right;color:#9ca3af">209,771</td></tr>
-          <tr><td>Viviendas habitadas</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.viv_h)}</td><td style="text-align:right;color:#9ca3af">&mdash;</td></tr>
-          <tr><td>% PEA</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pct_pea,1)}%</td><td style="text-align:right;color:#9ca3af">49.8%</td></tr>
-          <tr><td>Escolaridad (a&ntilde;os)</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.escolaridad,1)}</td><td style="text-align:right;color:#9ca3af">11.1</td></tr>
-          <tr><td>% Vivienda deshabitada</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pct_viv_des,1)}%</td><td style="text-align:right;color:#9ca3af">14.6%</td></tr>
-        </table>
-        <div class="h-sec" style="margin-top:22px">Dinamica 2010&ndash;2020</div>
-        ${hbar('Poblacion', sgn(s.crec_pob), 40, s.crec_pob>=0?'#10b981':'#ef4444')}
-        ${hbar('Hogares', sgn(s.crec_hog), 40, s.crec_hog>=0?'#10b981':'#ef4444')}
-        ${hbar('Vivienda habitada', sgn(s.crec_viv), 40, s.crec_viv>=0?'#10b981':'#ef4444')}
-      </div>
-      <div>
-        <div class="h-sec">Estructura por edad</div>
-        ${hbar('0&ndash;14 a&ntilde;os', f(s.pct_0_14,1)+'%', 60)}
-        ${hbar('15&ndash;24 a&ntilde;os', f(s.pct_15_24,1)+'%', 60)}
-        ${hbar('25&ndash;59 a&ntilde;os', f(s.pct_25_59,1)+'%', 60, '#059669')}
-        ${hbar('60+ a&ntilde;os', f(s.pct_60,1)+'%', 60, s.pct_60>=20?'#f59e0b':'#10b981')}
-        <div class="h-sec" style="margin-top:22px">Nivel socioeconomico (AMAI)</div>
-        ${nseRows.map(([k,v])=>hbar(k, f(v), s.nse_total||1, '#059669')).join('')}
-        <div style="font-size:10px;color:#9ca3af;margin-top:6px">${f(s.nse_total)} viviendas clasificadas por AGEB</div>
-      </div>
-    </div>
-    ${faroFooter('Fuente: Censo de Poblacion y Vivienda 2020 (INEGI) &middot; Clasificacion NSE AMAI 2018')}
-  </div>`;
-
-  // ── PAGE 5 — MERCADO ───────────────────────────────────────────────────────
-  const percRow=(l,v,n)=>`<tr><td style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af">${l}</td><td style="text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:#0d1117">${v}</td><td style="font-size:10px;color:#6b7280">${n||''}</td></tr>`;
-  const oppRows = opps.length ? opps.map(d=>`<tr><td>${(d.colonia||'&mdash;')}</td><td style="text-transform:capitalize">${(d.tipo_inmueble||'').replace(/_/g,' ')}</td><td style="text-align:right;font-family:'Space Mono',monospace">${money(d.precio_mxn)}</td><td style="text-align:right;font-family:'Space Mono',monospace;color:#059669;font-weight:700">${f(d.pct_vs_colonia,1)}%</td></tr>`).join('') : `<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:14px">Sin oportunidades detectadas bajo el promedio de colonia.</td></tr>`;
-  const PAGE5 = `<div class="page">
-    ${faroLetterhead(title, sub, '03 &middot; Analisis de Mercado', 5, TP)}
-    <div style="padding:22px 28px;flex:1">
-      ${total<2 ? `<div class="card" style="background:#fffbeb;border-color:#fde68a"><div class="eyebrow" style="color:#d97706;margin-bottom:6px">Oferta insuficiente</div><div style="font-size:12px;color:#374151;line-height:1.6">Solo ${total} listing(s) en el radio. La recomendacion de precio se basa en la banda de referencia por NSE. Ampliar el radio o esperar mas capturas semanales para un benchmark robusto.</div></div>` : `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:26px;align-content:start">
+      <div class="h-sec">Crecimiento comparativo 2010&ndash;2020 &middot; zona vs municipio</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div>
-          <div class="h-sec">Oferta por tipo de inmueble</div>
-          ${sortObj(byTipo).slice(0,6).map(([k,v])=>hbar(k.replace(/\b\w/g,c=>c.toUpperCase()),v,total)).join('')}
-          <div class="h-sec" style="margin-top:20px">Oferta por portal</div>
+          ${[['Poblacion',s.crec_pob,b.crec_pob],['Hogares',s.crec_hog,b.crec_hog],['Vivienda hab.',s.crec_viv,b.crec_viv]].map(r=>{
+            const mx=Math.max(Math.abs(r[1]),Math.abs(r[2]),1)*1.2;
+            const zw=Math.min(Math.abs(r[1])/mx*100,100), mw=Math.min(Math.abs(r[2])/mx*100,100);
+            return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:10px;color:#6b7280;margin-bottom:3px"><span>${r[0]}</span><span style="font-weight:700;color:${r[1]>=0?'#059669':'#dc2626'}">${sgn(r[1])}</span></div>
+              <div style="height:6px;background:#eef0f3;border-radius:4px;margin-bottom:2px"><div style="height:6px;border-radius:4px;width:${zw}%;background:${r[1]<0?'#dc2626':'#059669'}"></div></div>
+              <div style="height:6px;background:#eef0f3;border-radius:4px"><div style="height:6px;border-radius:4px;width:${mw}%;background:#9ca3af"></div></div></div>`;
+          }).join('')}
+          <div style="font-size:9px;color:#9ca3af;margin-top:4px"><span style="display:inline-block;width:9px;height:9px;background:#059669;border-radius:2px;vertical-align:middle"></span> Zona &nbsp; <span style="display:inline-block;width:9px;height:9px;background:#9ca3af;border-radius:2px;vertical-align:middle"></span> Municipio</div>
+        </div>
+        <div>
+          <table>
+            <tr><th>Indicador</th><th style="text-align:right">Zona</th><th style="text-align:right">Mun.</th></tr>
+            <tr><td>Densidad hab/km&sup2;</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.densidad)}</td><td style="text-align:right;color:#9ca3af">${f(b.densidad_pob)}</td></tr>
+            <tr><td>Escolaridad (a&ntilde;os)</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.escolaridad,1)}</td><td style="text-align:right;color:#9ca3af">${f(b.escolaridad,1)}</td></tr>
+            <tr><td>Hab. por vivienda</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.viv_h?s.pob/s.viv_h:0,2)}</td><td style="text-align:right;color:#9ca3af">${f(b.pob_total/b.viv_habitadas,2)}</td></tr>
+            <tr><td>% PEA activa</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pct_pea,1)}%</td><td style="text-align:right;color:#9ca3af">${f(b.pct_pea,1)}%</td></tr>
+            <tr><td>% Vivienda deshab.</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(s.pct_viv_des,1)}%</td><td style="text-align:right;color:#9ca3af">${f(b.pct_viv_des,1)}%</td></tr>
+          </table>
+        </div>
+      </div>
+      <div style="margin-top:14px">${bullets.slice(0,2).map(x=>bulletHtml(x[0],x[1])).join('')}</div>
+    </div>
+    ${faroFooter('Fuente: Censo 2020 INEGI &middot; Clasificacion NSE AMAI 2018')}
+  </div>`;
+
+  // PAGE 4 - PERFIL SOCIODEMOGRAFICO (2/2)
+  const PAGE4 = `<div class="page">
+    ${faroLetterhead(title, sub, '01 &middot; Perfil Sociodemografico (2/2)', 4, TP)}
+    <div style="padding:20px 28px;flex:1;display:grid;grid-template-columns:1fr 1fr;gap:24px;align-content:start">
+      <div>
+        <div class="h-sec">Estructura de edad &middot; zona vs municipio</div>
+        ${[['0&ndash;14',s.pct_0_14,b.pct_0_14],['15&ndash;24',s.pct_15_24,b.pct_15_24],['25&ndash;59',s.pct_25_59,b.pct_25_59],['60+',s.pct_60,b.pct_60mas]].map(a=>{
+          const mx=Math.max(s.pct_0_14,s.pct_15_24,s.pct_25_59,s.pct_60,b.pct_25_59)*1.2;
+          return `<div style="margin-bottom:8px"><div style="font-size:10px;color:#6b7280;margin-bottom:2px">${a[0]} a&ntilde;os</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px"><div style="height:9px;border-radius:3px;background:#059669;width:${(a[1]/mx*88).toFixed(0)}%;min-width:2px"></div><span style="font-size:8px;color:#059669;font-weight:700">${f(a[1],1)}%</span></div>
+            <div style="display:flex;align-items:center;gap:5px"><div style="height:9px;border-radius:3px;background:#9ca3af;width:${(a[2]/mx*88).toFixed(0)}%;min-width:2px"></div><span style="font-size:8px;color:#9ca3af">${f(a[2],1)}%</span></div></div>`;
+        }).join('')}
+        <div style="font-size:9px;color:#9ca3af;margin-top:3px"><span style="display:inline-block;width:9px;height:9px;background:#059669;border-radius:2px;vertical-align:middle"></span> Zona &nbsp; <span style="display:inline-block;width:9px;height:9px;background:#9ca3af;border-radius:2px;vertical-align:middle"></span> Municipio</div>
+        <div class="h-sec" style="margin-top:20px">Parque habitacional</div>
+        ${[['Habitadas',s.pct_viv_h,'#059669'],['Deshabitadas',s.pct_viv_des,'#dc2626'],['Uso temporal',s.pct_viv_tmp,'#d97706'],['2+ dormitorios',s.pct_2dor,'#0d9488']].map(i=>`<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span style="font-size:10px;color:#6b7280;width:84px">${i[0]}</span><div style="flex:1;height:7px;background:#eef0f3;border-radius:4px"><div style="height:7px;border-radius:4px;width:${Math.min(i[1]||0,100).toFixed(0)}%;background:${i[2]}"></div></div><span style="font-family:'Space Mono',monospace;font-size:10px;color:${i[2]};font-weight:700;width:34px;text-align:right">${f(i[1],1)}%</span></div>`).join('')}
+        <div style="font-size:9px;color:#9ca3af;margin-top:5px">Ocupacion: <strong style="color:#059669">${f(s.viv_h?s.pob/s.viv_h:0,2)}</strong> hab/viv (municipio ${f(b.pob_total/b.viv_habitadas,2)})</div>
+      </div>
+      <div>
+        <div class="h-sec">Distribucion NSE &middot; AMAI 2018</div>
+        <div style="font-size:9px;color:#9ca3af;margin-bottom:6px">${f(s.nse_total)} viviendas clasificadas</div>
+        <div style="display:flex;height:16px;border-radius:6px;overflow:hidden;margin-bottom:9px">
+          ${nseItems2.map(x=>`<div title="${x[0]}" style="width:${(x[1]/(s.nse_total||1)*100).toFixed(1)}%;background:${x[2]};min-width:${x[1]?2:0}px"></div>`).join('')}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px 9px;margin-bottom:14px">
+          ${nseItems2.map(x=>`<span style="display:flex;align-items:center;gap:3px;font-size:9px"><span style="width:8px;height:8px;border-radius:50%;background:${x[2]}"></span><strong>${x[0]}</strong> <span style="color:#9ca3af">${(x[1]/(s.nse_total||1)*100).toFixed(0)}%</span></span>`).join('')}
+        </div>
+        <div style="border-top:1px solid #eef0f3;padding-top:9px">
+          <div style="font-size:11px;margin-bottom:4px"><span style="color:#065f46;font-weight:700">Alto (AB+C+):</span> <strong>${f(pct_alto,1)}%</strong></div>
+          <div style="font-size:11px;margin-bottom:4px"><span style="color:#10b981;font-weight:700">Medio (C):</span> <strong>${f(pct_c,1)}%</strong></div>
+          <div style="font-size:11px"><span style="color:#f59e0b;font-weight:700">Bajo (C&minus;/D/E):</span> <strong>${f(pct_bajo,1)}%</strong></div>
+        </div>
+        <div class="h-sec" style="margin-top:18px">Estructura familiar</div>
+        ${[['Solteros',s.fam_total?s.sol/s.fam_total*100:0],['Casados / union',s.fam_total?s.cas/s.fam_total*100:0],['Separados / div.',s.fam_total?s.sep/s.fam_total*100:0]].map(i=>`<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span style="font-size:10px;color:#6b7280;width:96px">${i[0]}</span><div style="flex:1;height:7px;background:#eef0f3;border-radius:4px"><div style="height:7px;border-radius:4px;width:${Math.min(i[1],100).toFixed(0)}%;background:#0d9488"></div></div><span style="font-family:'Space Mono',monospace;font-size:10px;color:#0d1117;width:34px;text-align:right">${f(i[1],1)}%</span></div>`).join('')}
+        <div style="font-size:9px;color:#9ca3af;margin-top:4px">Fertilidad: <strong style="color:#059669">${f(s.prom_hnv,2)}</strong> hijos/mujer (municipio ${f(b.prom_hnv,2)})</div>
+      </div>
+    </div>
+    ${faroFooter('Fuente: Censo 2020 INEGI &middot; AMAI 2018')}
+  </div>`;
+
+  // PAGE 5 - ANALISIS DE MERCADO (1/2)
+  const PAGE5 = `<div class="page">
+    ${faroLetterhead(title, sub, '02 &middot; Analisis de Mercado (1/2) &middot; Inventario y precios', 5, TP)}
+    <div style="padding:20px 28px;flex:1">
+      ${total<2 ? `<div class="card" style="background:#fffbeb;border-color:#fde68a"><div class="eyebrow" style="color:#d97706;margin-bottom:6px">Oferta insuficiente</div><div style="font-size:12px;color:#374151;line-height:1.6">Solo ${total} listing(s) en el radio. La recomendacion de precio se basa en la banda de referencia por NSE. Ampliar el radio o esperar mas capturas para un benchmark robusto.</div></div>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-content:start">
+        <div>
+          <div class="h-sec">Inventario por tipo de inmueble</div>
+          ${sortObj(byTipo).slice(0,6).map(([k,v])=>hbar(cap(k),v,total)).join('')}
+          <div class="h-sec" style="margin-top:18px">Venta vs renta</div>
+          ${hbar('Venta', byOp.venta||0, total, '#059669')}
+          ${hbar('Renta', byOp.renta||0, total, '#0d9488')}
+          <div class="h-sec" style="margin-top:18px">Por portal</div>
           ${sortObj(byPortal).slice(0,5).map(([k,v])=>hbar(k,v,total,'#0d9488')).join('')}
         </div>
         <div>
           <div class="h-sec">Precios de venta (MXN)</div>
-          <table>${percRow('P25', medP?money(p25P):'&mdash;','entrada')}${percRow('Mediana', medP?money(medP):'&mdash;','precio tipico')}${percRow('P75', medP?money(p75P):'&mdash;','techo comun')}</table>
-          <div style="font-size:10px;color:#9ca3af;margin:6px 0 0">Sobre ${ventas.length} listings de venta con precio.</div>
-          <div class="h-sec" style="margin-top:20px">Terreno &amp; benchmark</div>
+          <table>${percRow('P25', medP?money(p25P):'&mdash;','entrada')}${percRow('Mediana', medP?money(medP):'&mdash;','tipico')}${percRow('P75', medP?money(p75P):'&mdash;','techo')}</table>
+          <div style="font-size:9px;color:#9ca3af;margin-top:5px">Sobre ${ventas.length} ventas con precio.</div>
+          <div class="h-sec" style="margin-top:18px">Terreno &amp; benchmark</div>
           <table>${percRow('$/m&sup2; mediana', medPm2?money(Math.round(medPm2)):'&mdash;','zona')}${percRow('Benchmark mun.', money(BENCH_PM2),'Torreon')}${percRow('Diferencia', benchDiff!=null?sgn(benchDiff):'&mdash;', benchDiff!=null?(benchDiff>0?'premium':'descuento'):'')}</table>
-          <div class="card" style="margin-top:16px;background:#f0fdf4;border-color:#bbf7d0">
-            <div class="eyebrow" style="margin-bottom:6px">Presion de precios</div>
-            <div style="font-size:12px;color:#0d1117;line-height:1.5"><strong>${presion}</strong> &middot; ${presionTxt}</div>
+          <div class="card" style="margin-top:14px;background:${benchDiff!=null&&benchDiff<-15?'#ecfdf5':benchDiff!=null&&benchDiff>15?'#fef2f2':'#f0fdfa'};border-color:#bbf7d0">
+            <div class="eyebrow" style="margin-bottom:5px">Posicion de mercado</div>
+            <div style="font-size:11.5px;color:#0d1117;line-height:1.5">${benchTxt||'Sin datos suficientes de terreno para posicionar la zona.'}</div>
           </div>
         </div>
-      </div>
-      <div class="h-sec" style="margin-top:22px">Oportunidades detectadas (bajo promedio de colonia)</div>
-      <table><tr><th>Colonia</th><th>Tipo</th><th style="text-align:right">Precio</th><th style="text-align:right">vs colonia</th></tr>${oppRows}</table>`}
+      </div>`}
     </div>
-    ${faroFooter('Fuente: scraping semanal de portales inmobiliarios &middot; Filtrado por radio geografico')}
+    ${faroFooter('Fuente: scraping de portales inmobiliarios &middot; filtrado por radio geografico')}
   </div>`;
 
-  // ── PAGE 6 — FUENTES Y METODOLOGIA ─────────────────────────────────────────
+  // PAGE 6 - ANALISIS DE MERCADO (2/2)
   const PAGE6 = `<div class="page">
-    ${faroLetterhead(title, sub, '04 &middot; Fuentes y Metodologia', 6, TP)}
-    <div style="padding:24px 28px;flex:1">
-      <div class="h-sec">Fuentes de datos</div>
-      <table>
-        <tr><th>Fuente</th><th>Uso en el reporte</th><th>Vigencia</th></tr>
-        <tr><td><strong>INEGI</strong> &mdash; Censo 2020</td><td>Poblacion, vivienda, edad, PEA, escolaridad, dinamica 2010&ndash;2020</td><td>2020</td></tr>
-        <tr><td><strong>AMAI</strong> (Regla 8x7)</td><td>Clasificacion de nivel socioeconomico por AGEB</td><td>2018</td></tr>
-        <tr><td><strong>Portales inmobiliarios</strong></td><td>Oferta activa: precios, $/m&sup2;, tipologia, oportunidades</td><td>Captura semanal</td></tr>
-        <tr><td><strong>Benchmark municipal</strong></td><td>Referencia $/m&sup2; terreno Torreon</td><td>Interno COEZA</td></tr>
-      </table>
-      <div class="h-sec" style="margin-top:24px">Metodologia</div>
-      <div style="font-size:12px;color:#374151;line-height:1.7">
-        <p style="margin-bottom:10px"><strong>1. Delimitacion de zona.</strong> Radio geografico desde el punto seleccionado; se incluyen los AGEB cuyo centroide cae dentro del radio (demografia) y los listings dentro del radio por distancia haversine (mercado).</p>
-        <p style="margin-bottom:10px"><strong>2. Perfil sociodemografico.</strong> Agregacion de los AGEB del radio. El Score de zona (0&ndash;10) pondera crecimiento poblacional, cohorte compradora 25&ndash;59, ocupacion habitacional, PEA y concentracion NSE medio-alto.</p>
-        <p style="margin-bottom:10px"><strong>3. Analisis de mercado.</strong> Percentiles de precio de venta, $/m&sup2; de terreno vs benchmark, presion de precios (historial de listings) y deteccion de oportunidades (precio bajo el promedio de su colonia).</p>
-        <p style="margin-bottom:10px"><strong>4. Recomendacion.</strong> Cruce de demanda (persona por NSE + dinamica de hogares) con oferta (tipologia activa + precios reales). La demanda potencial es una estimacion orientativa derivada de la formacion neta de hogares 2010&ndash;2020.</p>
+    ${faroLetterhead(title, sub, '02 &middot; Analisis de Mercado (2/2) &middot; $/m&sup2; por tipo y absorcion', 6, TP)}
+    <div style="padding:20px 28px;flex:1">
+      <div class="h-sec">$/m&sup2; y precio por operacion y tipo de inmueble</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px">
+        <div><div class="pill" style="margin-bottom:8px">Venta &middot; ${byOp.venta||0}</div>${cruceTable('Venta',cruceVenta)}</div>
+        <div><div class="pill" style="margin-bottom:8px">Renta &middot; ${byOp.renta||0}</div>${cruceTable('Renta',cruceRenta)}</div>
       </div>
-      <div class="card" style="margin-top:18px;background:#fffbeb;border-color:#fde68a">
-        <div style="font-size:11px;color:#92400e;line-height:1.6"><strong>Limitaciones.</strong> Las cifras de demanda son orientativas, no proyecciones financieras. La oferta refleja unicamente publicaciones capturadas. Validar con levantamiento de campo y estudio de absorcion antes de comprometer inversion.</div>
+      <div style="font-size:9px;color:#9ca3af;margin-top:6px">$/m&sup2; mediano: <strong>terr</strong> = sobre terreno, <strong>const</strong> = sobre construccion. Grupos con pocos anuncios son indicativos.</div>
+      ${usoTop.length?`<div style="font-size:10px;color:#6b7280;margin-top:8px">Uso de suelo predominante en el radio: ${usoTop.map(u=>`<strong>${u[0]}</strong> (${u[1]})`).join(' &middot; ')}</div>`:''}
+
+      <div class="h-sec" style="margin-top:20px">Dinamica de absorcion (proxy)</div>
+      <div class="card" style="background:#fffbeb;border-color:#fde68a;margin-bottom:12px">
+        <div style="font-size:11px;color:#92400e;line-height:1.55"><strong>Nota.</strong> No se mide absorcion real (unidades vendidas/rentadas por mes): requiere captura continua de bajas de anuncios o datos SOFTEC. A continuacion, proxies de la oferta capturada.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-content:start">
+        <div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin-bottom:8px">Profundidad de inventario</div>
+          ${[['Total en radio',f(total)],['En venta',f(byOp.venta||0)],['En renta',f(byOp.renta||0)],['Terrenos',f(terrenosCnt)],['Con historial de precio',f(conHist)]].map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0fdf4"><span style="font-size:11px;color:#6b7280">${r[0]}</span><span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:#0d1117">${r[1]}</span></div>`).join('')}
+        </div>
+        <div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin-bottom:8px">Presion de precios</div>
+          <div class="card" style="text-align:center;padding:14px"><div style="font-size:2rem;font-weight:800;color:${presion==='ALTA'?'#dc2626':presion==='MEDIA'?'#d97706':'#059669'}">${presion}</div><div style="font-size:9px;color:#9ca3af;margin-top:2px">${conHist<3?'historial insuficiente':pctBaj+'% bajaron precio'}</div></div>
+          <div style="font-size:10px;color:#6b7280;line-height:1.5;margin-top:8px">${presionTxt}</div>
+        </div>
+      </div>
+
+      <div class="h-sec" style="margin-top:18px">Oportunidades detectadas (bajo promedio de colonia)</div>
+      <table><tr><th>Colonia</th><th>Tipo</th><th style="text-align:right">Precio</th><th style="text-align:right">vs colonia</th></tr>${oppRows}</table>
+    </div>
+    ${faroFooter('Fuente: scraping de portales &middot; proxies de oferta, no absorcion transaccional')}
+  </div>`;
+
+  // PAGE 7 - INTELIGENCIA DE MERCADO (1/3): VACIO DE MERCADO
+  const maxOferta=Math.max(...ofertaBand,1);
+  const PAGE7 = `<div class="page">
+    ${faroLetterhead(title, sub, '03 &middot; Inteligencia de Mercado (1/3) &middot; Vacio de mercado', 7, TP)}
+    <div style="padding:20px 28px;flex:1">
+      <div class="h-sec">Vacio de mercado &middot; oferta vs capacidad de pago</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:14px;max-width:66ch">Compara como se distribuye la <strong>oferta de venta</strong> por banda de precio contra la <strong>capacidad de pago</strong> de los hogares de la zona (derivada del NSE). Donde la demanda potencial supera a la oferta hay un <strong>vacio</strong> = oportunidad de desarrollo.</div>
+      <table>
+        <tr><th>Banda de precio</th><th style="text-align:right">Oferta</th><th style="text-align:right">% oferta</th><th style="text-align:right">% capacidad</th><th style="text-align:right">Brecha</th></tr>
+        ${gapRows.map(r=>`<tr><td>${r.lbl}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.o}</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(r.oPct,0)}%</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(r.dPct,0)}%</td><td style="text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:${r.gap>8?'#059669':r.gap<-8?'#dc2626':'#6b7280'}">${(r.gap>=0?'+':'')+f(r.gap,0)}pp</td></tr>`).join('')}
+      </table>
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin-bottom:8px">Oferta por banda</div>
+          ${gapRows.map(r=>hbar(r.lbl,r.o,maxOferta,'#0d9488')).join('')}
+        </div>
+        <div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin-bottom:8px">Capacidad de pago (NSE)</div>
+          ${gapRows.map(r=>hbar(r.lbl,f(r.dPct,0)+'%',100,'#059669')).join('')}
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;background:#f0fdf4;border-color:#bbf7d0">
+        <div class="eyebrow" style="margin-bottom:6px">Lectura</div>
+        <div style="font-size:12px;color:#0d1117;line-height:1.55">${gapTop&&gapTop.gap>5?`La banda <strong>${gapTop.lbl}</strong> muestra la mayor brecha a favor de la demanda (+${f(gapTop.gap,0)}pp): capacidad de pago por encima de la oferta disponible. Es la ventana de desarrollo mas clara de la zona.`:'La oferta esta razonablemente alineada con la capacidad de pago por banda; no hay un vacio dominante. Competir por diferenciacion (producto/precio) mas que por banda desabastecida.'}</div>
+      </div>
+      <div style="font-size:9px;color:#9ca3af;margin-top:10px">Capacidad de pago = distribucion NSE mapeada a bandas asequibles (orientativo). Oferta = ${ofertaTot} ventas con precio en el radio.</div>
+    </div>
+    ${faroFooter('Cruce INEGI/AMAI (capacidad) x oferta de portales (banda de precio)')}
+  </div>`;
+
+  // PAGE 8 - INTELIGENCIA DE MERCADO (2/3): COLONIAS + YIELD
+  const PAGE8 = `<div class="page">
+    ${faroLetterhead(title, sub, '03 &middot; Inteligencia de Mercado (2/3) &middot; Colonias y rentabilidad', 8, TP)}
+    <div style="padding:20px 28px;flex:1">
+      <div class="h-sec">Ranking de colonias en el radio</div>
+      <table>
+        <tr><th>Colonia</th><th style="text-align:right">N</th><th style="text-align:right">Precio med.</th><th style="text-align:right">$/m&sup2; terr</th><th style="text-align:right">Oportun.</th></tr>
+        ${ranking.map(r=>`<tr><td>${r.col}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.n}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.med?mm(r.med):'&mdash;'}</td><td style="text-align:right;font-family:'Space Mono',monospace">${r.pm2?money(Math.round(r.pm2)):'&mdash;'}</td><td style="text-align:right;font-family:'Space Mono',monospace;color:${r.opp?'#059669':'#9ca3af'};font-weight:${r.opp?'700':'400'}">${r.opp?r.opp+' ('+f(r.oppPct,0)+'%)':'&mdash;'}</td></tr>`).join('')}
+      </table>
+      <div style="font-size:9px;color:#9ca3af;margin-top:5px">Top ${ranking.length} colonias por numero de listings en el radio. Oportun. = anuncios bajo el promedio de su colonia.</div>
+
+      <div class="h-sec" style="margin-top:22px">Rentabilidad bruta renta / venta (proxy de cap rate)</div>
+      ${yieldRows.length?`<table>
+        <tr><th>Tipo</th><th style="text-align:right">Renta med.</th><th style="text-align:right">Venta med.</th><th style="text-align:right">Yield bruto</th><th style="text-align:right">N r/v</th></tr>
+        ${yieldRows.map(r=>`<tr><td style="text-transform:capitalize">${r.tipo}</td><td style="text-align:right;font-family:'Space Mono',monospace">${money(Math.round(r.mr))}</td><td style="text-align:right;font-family:'Space Mono',monospace">${mm(r.mv)}</td><td style="text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:${r.yield>=8?'#059669':r.yield>=5?'#0d9488':'#d97706'}">${f(r.yield,1)}%</td><td style="text-align:right;font-family:'Space Mono',monospace;color:#9ca3af">${r.nr}/${r.nv}</td></tr>`).join('')}
+      </table>
+      <div style="font-size:9px;color:#9ca3af;margin-top:5px">Yield bruto = renta mensual mediana x12 / precio de venta mediano. ${yieldGlobal!=null?'Promedio zona: <strong>'+f(yieldGlobal,1)+'%</strong>. ':''}Muestras de renta delgadas: usar como orden de magnitud. No descuenta gastos ni vacancia.</div>`:`<div class="card" style="background:#fffbeb;border-color:#fde68a"><div style="font-size:11px;color:#92400e">Sin suficiente coincidencia renta/venta por tipo en el radio para estimar yield. Ampliar el radio o esperar mas capturas de renta.</div></div>`}
+    </div>
+    ${faroFooter('Fuente: oferta de portales &middot; yield bruto, sin gastos ni vacancia')}
+  </div>`;
+
+  // PAGE 9 - INTELIGENCIA DE MERCADO (3/3): FLIP + MIX + AMENIDADES
+  const maxRec=Math.max(...Object.values(recDist),1);
+  const PAGE9 = `<div class="page">
+    ${faroLetterhead(title, sub, '03 &middot; Inteligencia de Mercado (3/3) &middot; Flip, producto y amenidades', 9, TP)}
+    <div style="padding:20px 28px;flex:1">
+      <div class="h-sec">Candidatos a flip &middot; costo real de construccion (residual)</div>
+      <div style="font-size:10px;color:#6b7280;margin-bottom:8px">Precio total menos valor de terreno (m&sup2; terreno x $/m&sup2; promedio de su colonia) = valor de lo construido. Menor $/m&sup2; construido real = mejor oportunidad de comprar-remodelar-vender.</div>
+      ${flipCand.length?`<table>
+        <tr><th>Colonia</th><th>Tipo</th><th style="text-align:right">Precio</th><th style="text-align:right">m&sup2; const</th><th style="text-align:right">$/m&sup2; const real</th></tr>
+        ${flipCand.map(r=>`<tr><td>${r.colonia||'&mdash;'}</td><td style="text-transform:capitalize">${cap((r.tipo||'').replace(/_/g,' '))}</td><td style="text-align:right;font-family:'Space Mono',monospace">${mm(r.precio)}</td><td style="text-align:right;font-family:'Space Mono',monospace">${f(r.m2c)}</td><td style="text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:#059669">${money(Math.round(r.m2cReal))}</td></tr>`).join('')}
+      </table>`:`<div style="font-size:10px;color:#9ca3af">Sin suficientes construidos con terreno y $/m&sup2; de colonia para el residual en el radio.</div>`}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:20px">
+        <div>
+          <div class="h-sec">Mix de producto</div>
+          ${recN?`<div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin-bottom:6px">Recamaras (${recN})</div>${Object.entries(recDist).map(([k,v])=>hbar(k+' rec',v,maxRec)).join('')}`:'<div style="font-size:10px;color:#9ca3af">Sin datos de recamaras.</div>'}
+          <div style="font-size:10px;color:#6b7280;margin-top:8px">m&sup2; construido mediano: <strong style="color:#059669">${m2cMed?f(m2cMed):'&mdash;'}</strong>${m2cMed?' m&sup2;':''}</div>
+          ${premN?`<div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;margin:12px 0 6px">Nivel (${premN})</div>${sortObj(premDist).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:10px;padding:3px 0"><span style="text-transform:capitalize;color:#6b7280">${k}</span><span style="font-family:'Space Mono',monospace;font-weight:700">${v} (${f(v/premN*100,0)}%)</span></div>`).join('')}`:''}
+          ${estN?`<div style="font-size:10px;color:#6b7280;margin-top:8px">Condicion: ${sortObj(estDist).map(([k,v])=>cap(k.replace(/_/g,' '))+' '+f(v/estN*100,0)+'%').join(' &middot; ')}</div>`:''}
+        </div>
+        <div>
+          <div class="h-sec">Amenidades de la competencia</div>
+          ${amenTop.length?amenTop.map(([k,v])=>hbar(cap(k),v,amenTop[0][1],'#0d9488')).join(''):'<div style="font-size:10px;color:#9ca3af">Sin amenidades capturadas en el radio.</div>'}
+          ${amenN?`<div style="font-size:9px;color:#9ca3af;margin-top:6px">Sobre ${amenN} anuncios con amenidades listadas.</div>`:''}
+        </div>
+      </div>
+    </div>
+    ${faroFooter('Flip residual + perfil de producto &middot; subset con datos de construccion/atributos')}
+  </div>`;
+
+  // PAGE 10 - CONCLUSION Y RECOMENDACION
+  const PAGE10 = `<div class="page">
+    ${faroLetterhead(title, sub, '04 &middot; Conclusion y Recomendacion', 10, TP)}
+    <div style="padding:20px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div style="font-family:'Sora',sans-serif;font-size:1.4rem;font-weight:800;color:#0d1117">Conclusion de Mercado</div>
+        <span class="pill">Score ${score}/10 &middot; ${slbl}</span>
+      </div>
+      <div style="font-size:11.5px;color:#6b7280;margin-bottom:16px;max-width:64ch">Sintesis que cruza el <strong>perfil sociodemografico</strong> (demanda) con la <strong>oferta activa, el benchmark y la inteligencia de mercado</strong> para responder que, a quien, a cuantos y a que precio.</div>
+      <div class="card" style="border-top:3px solid #10b981">
+        ${recRow('&iquest;Que desarrollar?', queStr)}
+        ${recRow('&iquest;A quien?', quienStr)}
+        ${recRow('&iquest;A cuantos? (demanda potencial)', cuantosStr)}
+        ${recRow('&iquest;A que precio?', precioStr)}
+        <div style="padding:13px 0 2px"><div style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#10b981;margin-bottom:4px">&iquest;Por que? (demografia + benchmark)</div><div style="font-size:12.5px;color:#0d1117;line-height:1.5">${porqueStr}</div></div>
+      </div>
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="eyebrow" style="margin-bottom:9px">Senales de demanda (perfil)</div>
+          ${hbar('Crecimiento 2010&ndash;20', f(s.crec_pob,1)+'%', 40, s.crec_pob>=0?'#10b981':'#dc2626')}
+          ${hbar('Cohorte 25&ndash;59', f(s.pct_25_59,1)+'%', 60)}
+          ${hbar('PEA activa', f(s.pct_pea,1)+'%', 60)}
+          ${hbar('NSE AB+C+', f(pct_alto,1)+'%', 60, '#059669')}
+        </div>
+        <div class="card">
+          <div class="eyebrow" style="margin-bottom:9px">Senales de oferta (mercado)</div>
+          ${hbar('Oferta en radio', f(total), Math.max(total,10), '#0d9488')}
+          ${hbar('Presion vendedora', presion+' ('+pctBaj+'%)', 100, presion==='ALTA'?'#dc2626':presion==='MEDIA'?'#d97706':'#10b981')}
+          ${hbar('Oportunidades', f(opps.length), Math.max(opps.length,5), '#059669')}
+          ${hbar('Vacancia', f(s.pct_viv_des,1)+'%', 30, s.pct_viv_des>20?'#dc2626':s.pct_viv_des>12?'#d97706':'#10b981')}
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;background:#f0fdf4;border-color:#bbf7d0">
+        <div class="eyebrow" style="margin-bottom:6px">Veredicto</div>
+        <div style="font-size:12px;color:#0d1117;line-height:1.55">${score>=8?'Entorno muy favorable: proceder a profundizar oferta y preventa.':score>=6?'Condiciones favorables: continuar con benchmark fino y analisis de precio.':score>=4?'Condiciones moderadas: identificar riesgos especificos antes de comprometer capital.':'Senales de alerta: validar factores adicionales o considerar otra zona.'} ${benchTxt} ${yieldGlobal!=null?'Rentabilidad bruta de renta ~'+f(yieldGlobal,1)+'%.':''}</div>
       </div>
     </div>
     ${faroFooter()}
   </div>`;
 
-  // ── PAGE 7 — GLOSARIO ──────────────────────────────────────────────────────
+  // PAGE 11 - FUENTES Y METODOLOGIA
+  const PAGE11 = `<div class="page">
+    ${faroLetterhead(title, sub, '05 &middot; Fuentes y Metodologia', 11, TP)}
+    <div style="padding:24px 28px;flex:1">
+      <div class="h-sec">Fuentes de datos</div>
+      <table>
+        <tr><th>Fuente</th><th>Uso en el reporte</th><th>Vigencia</th></tr>
+        <tr><td><strong>INEGI</strong> &mdash; Censo 2020</td><td>Poblacion, vivienda, edad, PEA, escolaridad, dinamica 2010&ndash;2020, estructura familiar, capacidad de pago</td><td>2020</td></tr>
+        <tr><td><strong>AMAI</strong> (Regla 8x7)</td><td>Clasificacion de nivel socioeconomico por AGEB</td><td>2018</td></tr>
+        <tr><td><strong>Portales inmobiliarios</strong></td><td>Oferta activa: precios, $/m&sup2; por tipo y operacion, rentabilidad, flip residual, mix de producto, amenidades</td><td>Captura periodica</td></tr>
+        <tr><td><strong>IMPLAN</strong> &mdash; Zonificacion</td><td>Uso de suelo por punto (point-in-polygon)</td><td>Vigente</td></tr>
+        <tr><td><strong>Benchmark municipal</strong></td><td>Referencia $/m&sup2; terreno Torreon</td><td>Interno COEZA</td></tr>
+      </table>
+      <div class="h-sec" style="margin-top:22px">Metodologia</div>
+      <div style="font-size:11.5px;color:#374151;line-height:1.65">
+        <p style="margin-bottom:8px"><strong>1. Delimitacion.</strong> AGEB cuyo centroide cae en el radio (demografia) y listings dentro del radio por distancia haversine (mercado).</p>
+        <p style="margin-bottom:8px"><strong>2. Perfil sociodemografico.</strong> Agregacion de AGEB. Score 0&ndash;10 sobre crecimiento, cohorte 25&ndash;59, ocupacion, PEA y NSE medio-alto.</p>
+        <p style="margin-bottom:8px"><strong>3. Mercado.</strong> Percentiles de precio, $/m&sup2; mediano por tipo y operacion, terreno vs benchmark, presion de precios y oportunidades.</p>
+        <p style="margin-bottom:8px"><strong>4. Inteligencia de mercado.</strong> (a) <strong>Vacio de mercado</strong>: oferta por banda de precio vs capacidad de pago NSE. (b) <strong>Ranking de colonias</strong>. (c) <strong>Yield bruto</strong> = renta mediana x12 / venta mediana (sin gastos ni vacancia). (d) <strong>Flip residual</strong>: precio menos valor de terreno (m&sup2; terreno x $/m&sup2; promedio de colonia) sobre m&sup2; construidos. (e) Mix de producto y amenidades sobre el subset con atributos.</p>
+        <p style="margin-bottom:8px"><strong>5. Absorcion (proxy).</strong> No transaccional: profundidad de inventario + presion de precios. La real requiere captura continua de bajas o SOFTEC.</p>
+        <p style="margin-bottom:8px"><strong>6. Conclusion.</strong> Cruce de demanda (persona NSE + hogares) con oferta (tipologia + precios + benchmark + inteligencia). Demanda potencial = estimacion orientativa de formacion de hogares.</p>
+      </div>
+      <div class="card" style="margin-top:14px;background:#fffbeb;border-color:#fde68a">
+        <div style="font-size:11px;color:#92400e;line-height:1.6"><strong>Limitaciones.</strong> Cifras de demanda orientativas, no proyecciones financieras. Yield, mix y amenidades sobre el subconjunto de anuncios con esos datos. Validar con levantamiento de campo antes de comprometer inversion.</div>
+      </div>
+    </div>
+    ${faroFooter()}
+  </div>`;
+
+  // PAGE 12 - GLOSARIO
   const gl=[
     ['AGEB','Area Geoestadistica Basica: unidad territorial minima del censo INEGI.'],
     ['NSE','Nivel Socioeconomico (AMAI): A/B (alto) a E (bajo), estimado por caracteristicas de la vivienda.'],
     ['PEA','Poblacion Economicamente Activa: personas que trabajan o buscan empleo.'],
     ['Score de zona','Indice 0&ndash;10 que resume el atractivo sociodemografico para desarrollo (5 factores ponderados).'],
+    ['Vacio de mercado','Banda de precio donde la capacidad de pago (NSE) supera a la oferta disponible: ventana de desarrollo.'],
     ['$/m&sup2; terreno','Precio del suelo por metro cuadrado; referencia clave para land-banking y residual.'],
+    ['$/m&sup2; construccion','Precio por metro cuadrado construido; usado para comparar vivienda edificada por tipo.'],
+    ['Flip residual','Costo real de lo construido = precio total menos valor de terreno (m&sup2; terreno x $/m&sup2; de colonia). Menor = mejor oportunidad de remodelar y revender.'],
+    ['Yield bruto','Rentabilidad anual de renta: renta mensual x12 / precio de venta. Bruto (sin gastos, predial ni vacancia).'],
     ['Presion de precios','% de listings que han reducido su precio publicado; proxy de exceso de oferta.'],
+    ['Absorcion (proxy)','En ausencia de datos transaccionales, se aproxima con profundidad de inventario y presion de precios.'],
     ['P25 / Mediana / P75','Percentiles de precio: entrada, valor tipico y techo comun del mercado.'],
     ['Oportunidad','Listing publicado por debajo del promedio de precio de su colonia.'],
     ['Demanda potencial','Estimacion orientativa de unidades absorbibles/a&ntilde;o, derivada de formacion de hogares.'],
-    ['Vacancia','% de viviendas deshabitadas; umbrales: &lt;12% sano, 12&ndash;20% monitorear, &gt;20% alerta.'],
+    ['Uso de suelo','Categoria de zonificacion IMPLAN del punto: habitacional, mixto, corredor, industrial, etc.'],
     ['Benchmark municipal','Valor de referencia para Torreon usado para contrastar la zona.'],
   ];
-  const PAGE7 = `<div class="page">
-    ${faroLetterhead(title, sub, '05 &middot; Glosario', 7, TP)}
-    <div style="padding:24px 28px;flex:1">
+  const PAGE12 = `<div class="page">
+    ${faroLetterhead(title, sub, '06 &middot; Glosario', 12, TP)}
+    <div style="padding:22px 28px;flex:1">
       <div class="h-sec">Glosario de terminos</div>
-      ${gl.map(([t,d])=>`<div style="display:grid;grid-template-columns:160px 1fr;gap:16px;padding:11px 0;border-bottom:1px solid #eef0f3">
-        <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:12px;color:#059669">${t}</div>
-        <div style="font-size:11.5px;color:#374151;line-height:1.55">${d}</div></div>`).join('')}
-      <div style="margin-top:28px;text-align:center">
+      ${gl.map(([t,d])=>`<div style="display:grid;grid-template-columns:160px 1fr;gap:16px;padding:8px 0;border-bottom:1px solid #eef0f3">
+        <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:11.5px;color:#059669">${t}</div>
+        <div style="font-size:11px;color:#374151;line-height:1.5">${d}</div></div>`).join('')}
+      <div style="margin-top:18px;text-align:center">
         <div style="display:inline-flex;align-items:center;gap:9px">${faroLogoMark(18)}<span style="font-family:'Sora',sans-serif;font-weight:800;font-size:13px;letter-spacing:.06em;color:#0d1117">FARO</span><span style="font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#10b981">&middot; COEZA Consulting</span></div>
         <div style="font-size:10px;color:#9ca3af;margin-top:8px">Inteligencia inmobiliaria &middot; ${faroToday()} &middot; Documento confidencial</div>
       </div>
@@ -3204,14 +3551,14 @@ async function generateReporteConsolidado() {
     ${faroFooter()}
   </div>`;
 
-  const pages = PAGE1+PAGE2+PAGE3+PAGE4+PAGE5+PAGE6+PAGE7;
+  const pages = PAGE1+PAGE2+PAGE3+PAGE4+PAGE5+PAGE6+PAGE7+PAGE8+PAGE9+PAGE10+PAGE11+PAGE12;
   const printBtn = `<button onclick="window.print()" class="no-print" style="position:fixed;bottom:22px;right:22px;z-index:9999;background:#10b981;color:#fff;border:none;border-radius:30px;padding:13px 24px;font-family:sans-serif;font-weight:700;font-size:14px;box-shadow:0 6px 18px rgba(16,185,129,.45);cursor:pointer">Imprimir / Guardar PDF</button>`;
 
   const w = window.open('', '_blank', 'width=920,height=1100');
   if (!w) { if(st) st.textContent='Permite ventanas emergentes para ver el reporte.'; alert('Permite ventanas emergentes para ver el reporte.'); return; }
   w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>FARO &mdash; Reporte Consolidado &mdash; ${title}</title><style>${faroReportCSS()}</style></head><body>${pages}${printBtn}</body></html>`);
   w.document.close();
-  if (st) st.textContent = zona.length + ' listings · reporte generado';
+  if (st) st.textContent = zona.length + ' listings &middot; reporte generado';
   setTimeout(()=>{ try{ w.focus(); }catch(e){} }, 250);
 }
 

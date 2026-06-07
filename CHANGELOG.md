@@ -5,6 +5,58 @@
 > `archive/versions/faro-MKn-FECHA.html` (+ su commit baseline). Si algo se rompe,
 > ese snapshot es la version de respaldo funcional.
 
+## v3.3.0 "MK5" - 2026-06-06
+
+Objetivo: uso de suelo con clave IMPLAN exacta + modo edicion de ubicacion protegida.
+
+### Frontend
+- Mapa: poligonos coloreados por CLAVE exacta (H1, H2, M1, CU1.1...) en vez de 8 categorias.
+  Paleta por familia con tonos graduados. Tabla `NORMATIVA_USO` con las 32 claves IMPLAN.
+- Leyenda agrupada por familia mostrando las claves. Bandera y sidebar muestran
+  clave + nombre + COS/CUS/CAS/niveles/usos permitidos (pendientes de cargar del reglamento
+  PDDU; la estructura ya esta lista y se llena en NORMATIVA_USO).
+- Lista: columna "Uso suelo" ahora muestra la clave exacta + categoria.
+- Modo edicion: toggle en el mapa -> pines arrastrables -> "Guardar (N)" hace PATCH por lote de
+  lat/lng + recalculo de uso de suelo en la nueva posicion + marca `ubicacion_manual=true`.
+- guardarPin (modal individual) migrado a `ubicacion_manual` + recalculo de uso.
+
+### Backend / DB
+- `scripts/mk5_uso_clave_ubicacion.sql`: columnas `uso_suelo_clave` + `ubicacion_manual`.
+- `poblar_uso_suelo.py`: ahora puebla `uso_suelo_clave` (codigo exacto del parentesis de SIMBOLOGIA).
+- `core/db.py` + `db_utils.py`: proteccion GRANULAR. Si `ubicacion_manual=true`, el scraper NO toca
+  lat/lng/uso_suelo/uso_suelo_clave/uso_suelo_cat (`CAMPOS_UBICACION`) pero SI actualiza
+  precio/descripcion/etc. El `editado_manualmente` (congela todo) se mantiene sin cambios.
+
+### Normativa PDDU cargada (2026-06-07)
+- Descargadas las 38 paginas del SIG IMPLAN (`https://www.trcimplan.gob.mx/sig/`) a
+  `data/implan_pddu/` (preservacion local por si las retiran).
+- Parseadas -> `data/implan_pddu/normativa.json` (COS/CUS/CAS/niveles/densidad/lote/usos por clave).
+- Inyectado `NORMATIVA_PDDU` en el dashboard: sidebar muestra COS/CUS/CAS/Niveles/Densidad/Lote +
+  resumen de usos permitidos; bandera muestra clave + familia + COS/CUS. Fuente: PDDU Torreon 2022.
+- 23 de 32 claves traen coeficientes (las 9 de equipamiento solo listan usos en su pagina IMPLAN).
+
+### Ejecutado (2026-06-07)
+- DDL corrido en Supabase. `poblar_uso_suelo.py` corrido: 848 listings con uso_suelo + uso_suelo_clave
+  (26 claves distintas: H2, HB, H1, H6, H5, CU1.2, AV, CU1.1, ERD, M2...).
+
+## v3.2.0 "MK4" - 2026-06-06
+
+Objetivo: reporte consolidado mas completo, accionable y con cruces de valor.
+
+### Reporte consolidado (de 7 a 12 paginas)
+- Demografia ampliada (2 paginas ricas, recoloreadas a verde de marca): buyer persona,
+  crecimiento comparativo zona vs municipio, estructura de edad, parque habitacional, NSE,
+  estructura familiar, bullets territoriales.
+- Mercado (2 paginas): inventario + precios + $/m2 por operacion x tipo de inmueble +
+  absorcion (proxy honesto: profundidad de inventario + presion de precios, NO transaccional) +
+  oportunidades.
+- NUEVA seccion "Inteligencia de Mercado" (3 paginas): vacio de mercado (oferta por banda de
+  precio vs capacidad de pago NSE), ranking de colonias, yield bruto renta/venta, flip residual
+  ($/m2 construido real), mix de producto (recamaras/m2/premium/condicion), amenidades.
+- Recomendacion que/quien/cuanto/precio movida al FINAL como conclusion que recapitula
+  demografia + benchmark + inteligencia.
+- Fuentes y glosario actualizados (yield, vacio de mercado, flip residual, $/m2 construccion).
+
 ## v3.0.0 "MK2" - 2026-06-04 (en progreso)
 
 Baseline: MK1 = commit c82394e (`archive/versions/faro-MK1-2026-06-04.html`).

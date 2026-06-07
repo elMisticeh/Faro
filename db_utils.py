@@ -31,6 +31,10 @@ CAMPOS_SIEMPRE = {
     'fecha_ultimo_scrape', 'activo'
 }
 
+# Si ubicacion_manual = true, el scraper NO toca estos campos (pero SI actualiza
+# precio/descripcion/etc). Editar el pin en el mapa protege solo la ubicacion.
+CAMPOS_UBICACION = {'lat', 'lng', 'uso_suelo', 'uso_suelo_clave', 'uso_suelo_cat'}
+
 def upsert_listing(listing: dict, link_field='link_publicacion') -> dict:
     """
     Inserta o actualiza un listing respetando ediciones manuales.
@@ -44,7 +48,7 @@ def upsert_listing(listing: dict, link_field='link_publicacion') -> dict:
 
     # Verificar si ya existe
     res = sb.table('listings').select(
-        'id, editado_manualmente, fecha_ultimo_scrape, activo'
+        'id, editado_manualmente, ubicacion_manual, fecha_ultimo_scrape, activo'
     ).eq(link_field, link).limit(1).execute()
 
     ahora = datetime.now().isoformat()
@@ -76,6 +80,11 @@ def upsert_listing(listing: dict, link_field='link_publicacion') -> dict:
                 'notas_editor', 'fecha_edicion']:
         payload.pop(col, None)
 
+    # Ubicacion protegida: si el pin fue editado en el mapa, no mover lat/lng ni uso de suelo
+    if existente.get('ubicacion_manual'):
+        for col in CAMPOS_UBICACION:
+            payload.pop(col, None)
+
     sb.table('listings').update(payload).eq('id', id_existente).execute()
     return {'accion': 'actualizado', 'id': id_existente}
 
@@ -100,7 +109,7 @@ def upsert_listings_batch(listings: list, link_field='link_publicacion') -> dict
 
     for i in range(0, len(links), 50):
         res = sb.table('listings').select(
-            f'id, {link_field}, editado_manualmente'
+            f'id, {link_field}, editado_manualmente, ubicacion_manual'
         ).in_(link_field, links[i:i+50]).execute()
         for row in (res.data or []):
             existentes[row[link_field]] = row
@@ -119,7 +128,7 @@ def upsert_listings_batch(listings: list, link_field='link_publicacion') -> dict
         elif existentes[link].get('editado_manualmente'):
             a_proteger.append(existentes[link]['id'])
         else:
-            a_actualizar.append((existentes[link]['id'], listing))
+            a_actualizar.append((existentes[link]['id'], listing, existentes[link].get('ubicacion_manual')))
 
     # --- Insertar nuevos en lote ---
     if a_insertar:
@@ -134,12 +143,15 @@ def upsert_listings_batch(listings: list, link_field='link_publicacion') -> dict
         stats['insertados'] = len(a_insertar)
 
     # --- Actualizar existentes en lote (de a uno por limitación de Supabase) ---
-    for (id_ex, listing) in a_actualizar:
+    for (id_ex, listing, ubic_man) in a_actualizar:
         payload = {**listing, 'fecha_ultimo_scrape': ahora}
         for col in ['precio_x_m2_terreno', 'precio_x_m2_construccion',
                     'fecha_primer_scrape', 'editado_manualmente',
                     'notas_editor', 'fecha_edicion']:
             payload.pop(col, None)
+        if ubic_man:
+            for col in CAMPOS_UBICACION:
+                payload.pop(col, None)
         sb.table('listings').update(payload).eq('id', id_ex).execute()
     stats['actualizados'] = len(a_actualizar)
 
