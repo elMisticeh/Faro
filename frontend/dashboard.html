@@ -456,6 +456,7 @@ a.link-ext:hover{text-decoration:underline}
     <div class="sub-tab active" id="sub-tab-lista" onclick="switchSubTab('lista')">Lista</div>
     <div class="sub-tab" id="sub-tab-mapa" onclick="switchSubTab('mapa')">Mapa</div>
     <div class="sub-tab" id="sub-tab-validacion" onclick="switchSubTab('validacion')">Validación <span id="badge-validacion" style="display:none;background:var(--accent3);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px"></span></div>
+    <div class="sub-tab" id="sub-tab-desarrollo" onclick="switchSubTab('desarrollo')">Desarrollo</div>
   </div>
 
     <div class="filters-wrap">
@@ -724,6 +725,18 @@ a.link-ext:hover{text-decoration:underline}
 </div>
 
 
+  <div id="view-desarrollo" style="display:none;padding:14px 18px">
+    <div style="display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-bottom:14px">
+      <div class="filter-group"><label>Costo de obra $/m²</label>
+        <input type="number" id="dev-costo" value="15000" step="500" style="width:120px" oninput="renderDesarrollo()"></div>
+      <div class="filter-group"><label>Casas mín./colonia</label>
+        <input type="number" id="dev-min" value="4" min="1" step="1" style="width:80px" oninput="renderDesarrollo()"></div>
+      <label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="dev-baja" onchange="renderDesarrollo()"> mostrar baja confianza</label>
+      <button class="btn-reporte" onclick="generateReporteDesarrollo()" style="margin-left:auto;font-weight:700;background:linear-gradient(135deg,#059669,#10b981)">⬇ Reporte Desarrollo</button>
+    </div>
+    <div id="dev-table-container"></div>
+  </div>
 </div><!-- /view-mercado -->
 
 <!-- DEMOGRAFÍA VIEW ─────────────────────────────────────────── -->
@@ -836,15 +849,17 @@ function switchMainTab(tab) {
 function switchSubTab(sub) {
   currentSubTab = sub;
   currentTab = sub === 'lista' ? 'table' : sub;
-  ['lista','mapa','validacion'].forEach(id => {
+  ['lista','mapa','validacion','desarrollo'].forEach(id => {
     const el = document.getElementById('sub-tab-' + id);
     if (el) el.classList.toggle('active', id === sub);
   });
   document.getElementById('view-table').style.display      = sub === 'lista'      ? 'block' : 'none';
   document.getElementById('view-map').style.display        = sub === 'mapa'        ? 'block' : 'none';
   document.getElementById('view-validacion').style.display = sub === 'validacion' ? 'block' : 'none';
+  document.getElementById('view-desarrollo').style.display = sub === 'desarrollo' ? 'block' : 'none';
   if (sub === 'mapa') { initMap(); setTimeout(() => { if(map) map.invalidateSize(); }, 100); }
   if (sub === 'validacion') cargarValidacion();
+  if (sub === 'desarrollo') renderDesarrollo();
 }
 
 // Backward compat — older code calls switchTab(tab)
@@ -2179,6 +2194,29 @@ function calcularMargenDesarrollo(data, costoObra, minMuestras) {
   });
 
   return out.sort((a, b) => b.margenNeto - a.margenNeto);
+}
+
+function renderDesarrollo() {
+  const costo = parseFloat(document.getElementById('dev-costo').value) || 15000;
+  const minM  = parseInt(document.getElementById('dev-min').value) || 4;
+  const verBaja = document.getElementById('dev-baja').checked;
+  const rows = calcularMargenDesarrollo(allData, costo, minM);
+  window._margenDesarrollo = rows;
+  const vis = rows.filter(r => verBaja || r.confianza !== 'baja');
+  const dot = c => c==='alta'?'🟢':c==='media'?'🟡':'🔴';
+  const money = n => isNaN(n)||n==null?'—':'$'+Math.round(n).toLocaleString('es-MX');
+  const cont = document.getElementById('dev-table-container');
+  if (!vis.length) { cont.innerHTML = '<div class="empty">Sin colonias con suficientes muestras. Baja el mínimo o activa baja confianza.</div>'; return; }
+  cont.innerHTML = `<table><thead><tr>
+    <th>Colonia</th><th>Conf.</th><th>$/m² terreno</th><th>Ticket mediano</th>
+    <th>Residual $/m²c</th><th>Margen neto $/m²c</th><th>Margen/casa</th><th># casas</th></tr></thead><tbody>` +
+    vis.map(r => `<tr>
+      <td>${r.colonia}</td><td>${dot(r.confianza)}</td>
+      <td>${money(r.pm2TerrenoMediana)}</td><td>${money(r.ticketMediano)}</td>
+      <td>${money(r.residualMediano)}</td>
+      <td style="font-weight:700;color:${r.margenNeto>0?'#059669':'#b91c1c'}">${money(r.margenNeto)}</td>
+      <td>${money(r.margenPorCasa)}</td><td>${r.nCasas}</td></tr>`).join('') +
+    `</tbody></table>`;
 }
 
 // Llena el filtro de uso de suelo con las categorias presentes (uso_suelo_cat de Supabase)
