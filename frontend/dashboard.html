@@ -735,6 +735,7 @@ a.link-ext:hover{text-decoration:underline}
         <input type="checkbox" id="dev-baja" onchange="renderDesarrollo()"> mostrar baja confianza</label>
       <button class="btn-reporte" onclick="generateReporteDesarrollo()" style="margin-left:auto;font-weight:700;background:linear-gradient(135deg,#059669,#10b981)">⬇ Reporte Desarrollo</button>
     </div>
+    <div id="dev-map" style="height:360px;border-radius:8px;overflow:hidden;margin-bottom:14px"></div>
     <div id="dev-table-container"></div>
   </div>
 </div><!-- /view-mercado -->
@@ -2217,6 +2218,43 @@ function renderDesarrollo() {
       <td style="font-weight:700;color:${r.margenNeto>0?'#059669':'#b91c1c'}">${money(r.margenNeto)}</td>
       <td>${money(r.margenPorCasa)}</td><td>${r.nCasas}</td></tr>`).join('') +
     `</tbody></table>`;
+  if (typeof cargarColonias === 'function' && !coloniasData) { cargarColonias().then(()=>renderMapaDesarrollo(vis)); }
+  else renderMapaDesarrollo(vis);
+}
+
+let devMap = null, devColLayer = null;
+function colorMargen(m, maxAbs){
+  if (m == null) return '#e5e7eb';
+  if (m <= 0) return '#d1d5db';
+  const t = Math.max(0, Math.min(1, m / (maxAbs || 1)));
+  const g = Math.round(180 + t*40), r = Math.round(190 - t*140);
+  return `rgb(${r},${g},120)`;
+}
+function renderMapaDesarrollo(rows){
+  const cont = document.getElementById('dev-map');
+  if (!cont) return;
+  if (!devMap){
+    devMap = L.map('dev-map').setView([25.54,-103.42], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; CARTO'}).addTo(devMap);
+  }
+  setTimeout(()=>devMap.invalidateSize(),60);
+  if (devColLayer){ devColLayer.remove(); devColLayer = null; }
+  if (!coloniasData) return;
+  const norm = s => (s||'').trim().toLowerCase();
+  const byCol = {}; rows.forEach(r => byCol[norm(r.colonia)] = r);
+  const maxAbs = Math.max(1, ...rows.filter(r=>r.margenNeto>0).map(r=>r.margenNeto));
+  const money = n => isNaN(n)||n==null?'—':'$'+Math.round(n).toLocaleString('es-MX');
+  const dot = c => c==='alta'?'🟢':c==='media'?'🟡':'🔴';
+  devColLayer = L.geoJSON(coloniasData, {
+    style: f => { const r = byCol[norm(f.properties.colonia)];
+      return { color:'#9ca3af', weight:1, fillColor: colorMargen(r?r.margenNeto:null, maxAbs), fillOpacity: r?0.7:0.15 }; },
+    onEachFeature: (f, layer) => {
+      const r = byCol[norm(f.properties.colonia)];
+      if (r) layer.bindPopup(`<b>${r.colonia}</b> ${dot(r.confianza)}<br>
+        $/m² terreno: ${money(r.pm2TerrenoMediana)}<br>Residual: ${money(r.residualMediano)}/m²c<br>
+        <b>Margen neto: ${money(r.margenNeto)}/m²c</b><br>Margen/casa: ${money(r.margenPorCasa)}<br># casas: ${r.nCasas}`);
+    }
+  }).addTo(devMap);
 }
 
 // Llena el filtro de uso de suelo con las categorias presentes (uso_suelo_cat de Supabase)
