@@ -727,8 +727,13 @@ a.link-ext:hover{text-decoration:underline}
 
   <div id="view-desarrollo" style="display:none;padding:14px 18px">
     <div style="display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-bottom:14px">
-      <div class="filter-group"><label>Costo de obra $/m²</label>
-        <input type="number" id="dev-costo" value="15000" step="500" style="width:120px" oninput="renderDesarrollo()"></div>
+      <div class="filter-group"><label>Costo de obra</label>
+        <select id="dev-costo-modo" onchange="renderDesarrollo()" style="width:210px">
+          <option value="proporcional" selected>Proporcional al terreno ($14k–$19k)</option>
+          <option value="fijo">Fijo</option>
+        </select></div>
+      <div class="filter-group" id="dev-costo-fijo-wrap" style="display:none"><label>Costo fijo $/m²c</label>
+        <input type="number" id="dev-costo" value="15000" step="500" style="width:110px" oninput="renderDesarrollo()"></div>
       <div class="filter-group"><label>Casas mín./colonia</label>
         <input type="number" id="dev-min" value="3" min="1" step="1" style="width:80px" oninput="renderDesarrollo()"></div>
       <label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer">
@@ -2112,11 +2117,25 @@ function calcularValorConstruccion(data) {
 }
 
 // ── Motor de agregacion: margen de desarrollo por colonia ─────────────────────
+// Costo de obra PROPORCIONAL al valor de terreno (regla de 3). Anclas de la
+// Guia PMX Laguna ene-mar 2026 — clases Residencial Plus + Residencial de
+// Torreon, recorte de outliers P10-P90: terreno $4,510/m2 -> obra $14,000/m2c,
+// terreno $9,250/m2 -> obra $19,000/m2c. Idea: a mayor plusvalia del suelo,
+// mas caro construir el mismo producto.
+const OBRA_LO = 14000, OBRA_HI = 19000, LAND_LO = 4510, LAND_HI = 9250;
+function costoObraProporcional(pm2Terreno) {
+  if (!pm2Terreno || pm2Terreno <= LAND_LO) return OBRA_LO;
+  if (pm2Terreno >= LAND_HI) return OBRA_HI;
+  return Math.round(OBRA_LO + (pm2Terreno - LAND_LO) / (LAND_HI - LAND_LO) * (OBRA_HI - OBRA_LO));
+}
+
 // Retorna array de colonias ordenadas por margenNeto desc.
-// costoObra: costo de construccion en $/m2 construido (benchmark de mercado)
+// costoObra: costo fijo $/m2c (modo 'fijo'); costoModo='proporcional' lo deriva
+//   por colonia del valor de terreno con costoObraProporcional().
 // minMuestras: numero minimo de casas en venta para incluir la colonia
 // Sin dependencias DOM ni Leaflet — testeable en Node.
-function calcularMargenDesarrollo(data, costoObra, minMuestras) {
+function calcularMargenDesarrollo(data, costoObra, minMuestras, costoModo) {
+  const proporcional = costoModo === 'proporcional';
   function medianDesarrollo(a) {
     if (!a || !a.length) return null;
     const x = [...a].sort((p, q) => p - q);
@@ -2169,14 +2188,15 @@ function calcularMargenDesarrollo(data, costoObra, minMuestras) {
 
     const residualMediano = medianDesarrollo(residuales);
     const m2cMediano = medianDesarrollo(m2cs);
-    const margenNeto = residualMediano - costoObra;
+    const costoUsado = proporcional ? costoObraProporcional(pm2Terr) : costoObra;
+    const margenNeto = residualMediano - costoUsado;
     const nTerrenos = terrArr.length;
     const confianza = (arr.length >= minMuestras && nTerrenos >= 2) ? 'alta'
       : ((arr.length >= minMuestras || nTerrenos >= 2) && !fallback) ? 'media' : 'baja';
 
     out.push({
       colonia: col, nCasas: arr.length, nCasasUsadas: casasDetalle.length, nTerrenos,
-      pm2TerrenoMediana: pm2Terr, pm2TerrenoFallback: fallback,
+      pm2TerrenoMediana: pm2Terr, pm2TerrenoFallback: fallback, costoObra: costoUsado,
       ticketMediano: medianDesarrollo(tickets), m2cMediano, residualMediano, margenNeto,
       margenPorCasa: margenNeto * m2cMediano, confianza,
       casas: casasDetalle, terrenos: terrArr
@@ -2187,10 +2207,12 @@ function calcularMargenDesarrollo(data, costoObra, minMuestras) {
 }
 
 function renderDesarrollo() {
+  const modo = (document.getElementById('dev-costo-modo')||{}).value || 'proporcional';
+  document.getElementById('dev-costo-fijo-wrap').style.display = modo==='fijo' ? '' : 'none';
   const costo = parseFloat(document.getElementById('dev-costo').value) || 15000;
   const minM  = parseInt(document.getElementById('dev-min').value) || 3;
   const verBaja = document.getElementById('dev-baja').checked;
-  const rows = calcularMargenDesarrollo(allData, costo, minM);
+  const rows = calcularMargenDesarrollo(allData, costo, minM, modo);
   window._margenDesarrollo = rows;
   const vis = rows.filter(r => verBaja || r.confianza !== 'baja');
   const dot = c => c==='alta'?'🟢':c==='media'?'🟡':'🔴';
@@ -2198,11 +2220,11 @@ function renderDesarrollo() {
   const cont = document.getElementById('dev-table-container');
   if (!vis.length) { cont.innerHTML = '<div class="empty">Sin colonias con suficientes muestras. Baja el mínimo o activa baja confianza.</div>'; return; }
   cont.innerHTML = `<table><thead><tr>
-    <th>Colonia</th><th>Conf.</th><th>$/m² terreno</th><th>Ticket mediano</th>
+    <th>Colonia</th><th>Conf.</th><th>$/m² terreno</th><th>Costo obra $/m²c</th><th>Ticket mediano</th>
     <th>Residual $/m²c</th><th>Margen neto $/m²c</th><th>Margen/casa</th><th># casas</th></tr></thead><tbody>` +
     vis.map(r => `<tr>
       <td>${r.colonia}</td><td>${dot(r.confianza)}</td>
-      <td>${money(r.pm2TerrenoMediana)}</td><td>${money(r.ticketMediano)}</td>
+      <td>${money(r.pm2TerrenoMediana)}</td><td>${money(r.costoObra)}</td><td>${money(r.ticketMediano)}</td>
       <td>${money(r.residualMediano)}</td>
       <td style="font-weight:700;color:${r.margenNeto>0?'#059669':'#b91c1c'}">${money(r.margenNeto)}</td>
       <td>${money(r.margenPorCasa)}</td><td>${r.nCasas}</td></tr>`).join('') +
@@ -2290,10 +2312,14 @@ function devColoniaMatcher(rows){
 }
 
 function generateReporteDesarrollo(){
+  const modo = (document.getElementById('dev-costo-modo')||{}).value || 'proporcional';
   const costo = parseFloat(document.getElementById('dev-costo').value) || 15000;
   const minM  = parseInt(document.getElementById('dev-min').value) || 3;
   const rows = (window._margenDesarrollo && window._margenDesarrollo.length)
-    ? window._margenDesarrollo : calcularMargenDesarrollo(allData, costo, minM);
+    ? window._margenDesarrollo : calcularMargenDesarrollo(allData, costo, minM, modo);
+  const costoLabel = modo==='proporcional'
+    ? 'Proporcional al terreno ($14,000–$19,000/m²c, anclas Guia PMX clases Residencial+/Residencial)'
+    : ('Fijo $'+Math.round(costo).toLocaleString('es-MX')+'/m²c');
   const vis = rows.filter(r => r.confianza !== 'baja');
   if (!vis.length){ alert('No hay colonias con suficiente muestra. Ajusta los controles primero.'); return; }
   const money = n => isNaN(n)||n==null?'&mdash;':'$'+Math.round(n).toLocaleString('es-MX');
@@ -2315,7 +2341,7 @@ function generateReporteDesarrollo(){
     .sum{font-size:11px;color:#374151;margin:0 0 4px}
     .note{font-size:11px;line-height:1.6;background:#fffbeb;border-left:3px solid #d97706;padding:10px 12px;border-radius:6px;margin-top:10px}</style>`;
   const rowsTabla = vis.map(r=>`<tr><td>${r.colonia} ${dot(r.confianza)}</td><td>${money(r.pm2TerrenoMediana)}</td>
-    <td>${money(r.ticketMediano)}</td><td>${money(r.residualMediano)}</td>
+    <td>${money(r.costoObra)}</td><td>${money(r.ticketMediano)}</td><td>${money(r.residualMediano)}</td>
     <td style="font-weight:700;color:#059669">${money(r.margenNeto)}</td><td>${money(r.margenPorCasa)}</td><td>${r.nCasasUsadas}</td></tr>`).join('');
 
   function detalleColonia(r){
@@ -2328,7 +2354,7 @@ function generateReporteDesarrollo(){
     const casaRows = casas.map(c=>`<tr><td>${num(c.m2_terreno)} m²</td><td>${num(c.m2_construccion)} m²</td><td>${money(c.precio_mxn)}</td><td>&minus;${money(c.valorTerreno)}</td><td>${money(c.valorConstr)}</td><td style="font-weight:700;color:#059669">${money(c.residual)}/m²c</td></tr>`).join('');
     return `<div class="block">
       <h2 style="margin-bottom:4px">${r.colonia} ${dot(r.confianza)} — margen neto ${money(r.margenNeto)}/m²c</h2>
-      <p class="sum">$/m² terreno (mediana): <b>${money(r.pm2TerrenoMediana)}</b>${r.pm2TerrenoFallback?' (mediana global, sin terrenos propios)':''} · residual mercado: <b>${money(r.residualMediano)}/m²c</b> · ticket mediano: <b>${money(r.ticketMediano)}</b> · ${r.nCasasUsadas} casas · ${r.nTerrenos} terrenos</p>
+      <p class="sum">$/m² terreno (mediana): <b>${money(r.pm2TerrenoMediana)}</b>${r.pm2TerrenoFallback?' (mediana global, sin terrenos propios)':''} · costo obra: <b>${money(r.costoObra)}/m²c</b> · residual mercado: <b>${money(r.residualMediano)}/m²c</b> · ticket mediano: <b>${money(r.ticketMediano)}</b> · ${r.nCasasUsadas} casas · ${r.nTerrenos} terrenos</p>
       <h3>Terrenos en la colonia (${r.nTerrenos})</h3>
       <table><thead><tr><th>Superficie</th><th>Precio</th><th>$/m²</th></tr></thead><tbody>${terrRows}</tbody></table>${terrMas}
       <h3>Casas — extracción del valor del terreno</h3>
@@ -2343,19 +2369,20 @@ function generateReporteDesarrollo(){
       <h1 style="color:#fff;font-size:34px">Dónde Desarrollar</h1>
       <div style="font-size:15px;opacity:.9">Ranking de colonias por margen de construcción · Torreón</div>
       <div style="margin-top:40px;font-size:12px;opacity:.85;line-height:2">
-        Fecha: ${fecha}<br>Universo: casas en venta<br>Costo de obra asumido: ${money(costo)}/m²<br>
+        Fecha: ${fecha}<br>Universo: casas en venta<br>Costo de obra: ${costoLabel}<br>
         Casas mínimas por colonia: ${minM}<br>Colonias analizadas: ${vis.length}</div></div>
     <div class="page"><h2>Top 10 colonias por margen neto</h2>
       ${top.map(r=>hbar(`${r.colonia} — margen/casa ${money(r.margenPorCasa)}`, r.margenNeto, maxM)).join('')}
       <p style="font-size:11px;color:#6b7280;margin-top:16px">El margen neto es lo que el mercado paga por m² construido por encima del costo de obra asumido. A mayor margen, más rentable construir el mismo producto.</p></div>
-    <div class="page"><h2>Tabla completa</h2><table><thead><tr><th>Colonia</th><th>$/m² terreno</th><th>Ticket</th><th>Residual $/m²c</th><th>Margen neto</th><th>Margen/casa</th><th># casas</th></tr></thead><tbody>${rowsTabla}</tbody></table></div>
+    <div class="page"><h2>Tabla completa</h2><table><thead><tr><th>Colonia</th><th>$/m² terreno</th><th>Costo obra</th><th>Ticket</th><th>Residual $/m²c</th><th>Margen neto</th><th>Margen/casa</th><th># casas</th></tr></thead><tbody>${rowsTabla}</tbody></table></div>
     <div class="flow"><h2>Detalle por colonia — justificación con listings reales</h2>
       <p style="font-size:11px;color:#6b7280;margin:0 0 14px">Para cada colonia del Top 10: terrenos comparables (define el $/m² del suelo) y casas en venta con la extracción del terreno que arroja el valor de construcción por m².</p>
       ${detalleHtml}</div>
     <div class="page"><h2>Metodología y advertencias</h2>
       <p style="font-size:12px;line-height:1.7">Por cada casa en venta se estima el <b>valor residual de construcción</b>:<br>
       <span class="mono">residual $/m²c = (precio &minus; m²_terreno &times; $/m²_terreno_mediano_colonia) &divide; m²_construcción</span><br><br>
-      Se toma la <b>mediana</b> por colonia (robusta a outliers del scrape) y se resta el costo de obra asumido para obtener el <b>margen neto $/m²c</b>, métrica de ranking. El <b>$/m² de terreno</b> sale de la mediana de listings de terreno de la colonia; si hay menos de 2, se usa la mediana global (esas colonias quedan marcadas 🔴 baja confianza y se excluyen de este reporte).</p>
+      Se toma la <b>mediana</b> por colonia (robusta a outliers del scrape) y se resta el costo de obra para obtener el <b>margen neto $/m²c</b>, métrica de ranking. El <b>$/m² de terreno</b> sale de la mediana de listings de terreno de la colonia; si hay menos de 2, se usa la mediana global (esas colonias quedan marcadas 🔴 baja confianza y se excluyen de este reporte).</p>
+      <p style="font-size:12px;line-height:1.7;margin-top:8px"><b>Costo de obra proporcional al terreno.</b> En vez de un costo fijo, cada colonia recibe un costo de construcción que escala con la plusvalía del suelo (a mejor zona, construcción más cara del mismo producto). Regla de 3 anclada en la <b>Guía PMX Laguna ene–mar 2026</b> (clases <b>Residencial Plus</b> + <b>Residencial</b> de Torreón, recorte de outliers P10–P90): terreno <span class="mono">$4,510/m²</span> → obra <span class="mono">$14,000/m²c</span>; terreno <span class="mono">$9,250/m²</span> → obra <span class="mono">$19,000/m²c</span>; intermedios interpolados, extremos topados. Dato de campo que valida el rango: c3casas reporta $14,000–$19,000/m²c de construcción en Torreón.</p>
       <div class="note">⚠ Datos de <b>oferta</b> (precios pedidos), no de transacciones cerradas. El scrape está pausado desde ~marzo 2026; trátese como foto de mercado, no como serie viva. Verificar en campo antes de decidir compra de terreno.</div></div>
     </body></html>`;
   const w = window.open('', '_blank');

@@ -53,3 +53,18 @@ assert.strictEqual(Math.round(r[0].margenNeto), 3789, 'margenNeto A = 15789-1200
 assert.strictEqual(r[0].confianza, 'alta', 'A confianza alta (4 casas, 2 terrenos)');
 assert.strictEqual(Math.round(r[1].residualMediano), 9600, 'residual B');
 console.log('OK — calcularMargenDesarrollo: matematica validada');
+
+// ── Costo de obra proporcional al terreno (anclas Guia PMX, P10-P90) ──────────
+const OBRA_LO=14000, OBRA_HI=19000, LAND_LO=4510, LAND_HI=9250;
+function costoObraProporcional(p){
+  if(!p || p<=LAND_LO) return OBRA_LO;
+  if(p>=LAND_HI) return OBRA_HI;
+  return Math.round(OBRA_LO + (p-LAND_LO)/(LAND_HI-LAND_LO)*(OBRA_HI-OBRA_LO));
+}
+assert.strictEqual(costoObraProporcional(4510), 14000, 'ancla baja -> 14k');
+assert.strictEqual(costoObraProporcional(9250), 19000, 'ancla alta -> 19k');
+assert.strictEqual(costoObraProporcional(3000), 14000, 'bajo el piso -> clamp 14k');
+assert.strictEqual(costoObraProporcional(12000), 19000, 'sobre el techo -> clamp 19k');
+assert.strictEqual(costoObraProporcional(9250), 19000, 'Las Villas ($9,250) -> 19k');
+assert.strictEqual(costoObraProporcional(5500), 15044, 'Navarro ($5,500) -> ~15k');
+console.log('OK — costoObraProporcional: anclas y clamps validados');

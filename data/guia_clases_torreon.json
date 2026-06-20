@@ -1,0 +1,268 @@
+{
+  "fuente": "Guia PMX Laguna ene-mar 2026 (Torreon, clases R+ y R)",
+  "OBRA_LO": 14000,
+  "OBRA_HI": 19000,
+  "LAND_LO": 4510,
+  "LAND_HI": 9250,
+  "colonias": [
+    {
+      "clase": "R+",
+      "colonia": "Cumbres",
+      "pm2_min": 8500,
+      "pm2_max": 11000,
+      "pm2_mid": 9750.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Granjas San Isidro",
+      "pm2_min": 6900,
+      "pm2_max": 8500,
+      "pm2_mid": 7700.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Hacienda Del Rosario",
+      "pm2_min": 4900,
+      "pm2_max": 5900,
+      "pm2_mid": 5400.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "La Barranca",
+      "pm2_min": 4500,
+      "pm2_max": 6000,
+      "pm2_mid": 5250.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "La Rua",
+      "pm2_min": 5600,
+      "pm2_max": 7000,
+      "pm2_mid": 6300.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "La Vinicola Residencial",
+      "pm2_min": 9500,
+      "pm2_max": 11500,
+      "pm2_mid": 10500.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Las Acacias",
+      "pm2_min": 8100,
+      "pm2_max": 8500,
+      "pm2_mid": 8300.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Las Trojes",
+      "pm2_min": 4100,
+      "pm2_max": 5000,
+      "pm2_mid": 4550.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Las Villas",
+      "pm2_min": 8500,
+      "pm2_max": 10000,
+      "pm2_mid": 9250.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Las Villas del Cardenchal",
+      "pm2_min": 6900,
+      "pm2_max": 8150,
+      "pm2_mid": 7525.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Los Angeles",
+      "pm2_min": 6000,
+      "pm2_max": 8000,
+      "pm2_mid": 7000.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Los Azulejos",
+      "pm2_min": 1000,
+      "pm2_max": 2800,
+      "pm2_mid": 1900.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Montebello",
+      "pm2_min": 4000,
+      "pm2_max": 5500,
+      "pm2_mid": 4750.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Real Del Nogalar",
+      "pm2_min": 4650,
+      "pm2_max": 5500,
+      "pm2_mid": 5075.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Residencial Campestre La Rosita",
+      "pm2_min": 6500,
+      "pm2_max": 12000,
+      "pm2_mid": 9250.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Residencial El Fresno",
+      "pm2_min": 6800,
+      "pm2_max": 8500,
+      "pm2_mid": 7650.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Residencial Galerias",
+      "pm2_min": 8500,
+      "pm2_max": 9000,
+      "pm2_mid": 8750.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Residencial Las Isabeles",
+      "pm2_min": 6000,
+      "pm2_max": 7150,
+      "pm2_mid": 6575.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Residencial Los Fresnos",
+      "pm2_min": 7000,
+      "pm2_max": 8000,
+      "pm2_mid": 7500.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Rincon San Angel",
+      "pm2_min": 5000,
+      "pm2_max": 5500,
+      "pm2_mid": 5250.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "San Isidro",
+      "pm2_min": 6000,
+      "pm2_max": 8500,
+      "pm2_mid": 7250.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "San Luciano",
+      "pm2_min": 6000,
+      "pm2_max": 7000,
+      "pm2_mid": 6500.0
+    },
+    {
+      "clase": "R+",
+      "colonia": "Torreon Jardin",
+      "pm2_min": 7000,
+      "pm2_max": 8000,
+      "pm2_mid": 7500.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Almeras Residencial",
+      "pm2_min": 4500,
+      "pm2_max": 5950,
+      "pm2_mid": 5225.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Ampliacion Los Angeles",
+      "pm2_min": 4600,
+      "pm2_max": 6000,
+      "pm2_mid": 5300.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Estrella",
+      "pm2_min": 5000,
+      "pm2_max": 6000,
+      "pm2_mid": 5500.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Hacienda San Jose",
+      "pm2_min": 5800,
+      "pm2_max": 6300,
+      "pm2_mid": 6050.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Las Margaritas",
+      "pm2_min": 4600,
+      "pm2_max": 6000,
+      "pm2_mid": 5300.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Las Quintas",
+      "pm2_min": 4100,
+      "pm2_max": 5500,
+      "pm2_mid": 4800.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Las Vinas",
+      "pm2_min": 5500,
+      "pm2_max": 6000,
+      "pm2_mid": 5750.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Los Vinedos",
+      "pm2_min": 5500,
+      "pm2_max": 6000,
+      "pm2_mid": 5750.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Navarro",
+      "pm2_min": 5000,
+      "pm2_max": 6000,
+      "pm2_mid": 5500.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Nueva Los Angeles",
+      "pm2_min": 4600,
+      "pm2_max": 6000,
+      "pm2_mid": 5300.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Quintas San Isidro",
+      "pm2_min": 4800,
+      "pm2_max": 5350,
+      "pm2_mid": 5075.0
+    },
+    {
+      "clase": "R",
+      "colonia": "San Armando",
+      "pm2_min": 2900,
+      "pm2_max": 3550,
+      "pm2_mid": 3225.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Santa Barbara",
+      "pm2_min": 4500,
+      "pm2_max": 5000,
+      "pm2_mid": 4750.0
+    },
+    {
+      "clase": "R",
+      "colonia": "Villas de la Ibero",
+      "pm2_min": 4200,
+      "pm2_max": 4500,
+      "pm2_mid": 4350.0
+    }
+  ]
+}
