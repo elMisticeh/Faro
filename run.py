@@ -193,6 +193,18 @@ def cmd_anomalias(usar_ia: bool, reporte: bool):
     anomalias_main()
     _sys.argv = old_argv
 
+# ── Comando: instagram ────────────────────────────────────────────────────────
+
+def cmd_instagram(perfiles, posts, posts_dump, max_posts, dry_run, captions_out):
+    from scrapers.instagram import run as ig_run, recolectar_urls
+    urls = recolectar_urls(posts, posts_dump)
+    if not perfiles and not urls:
+        print("[instagram] Da --perfil y/o --posts/--posts-dump (no encontre URLs).")
+        return
+    if urls:
+        print(f"[instagram] {len(urls)} posts sueltos a procesar")
+    asyncio.run(ig_run(perfiles, urls, max_posts, dry_run, captions_out))
+
 # ── Comando: full (pipeline completo) ────────────────────────────────────────
 
 async def cmd_full(max_pags: int, skip_ia: bool):
@@ -272,6 +284,15 @@ def main():
     p_full.add_argument("--max-pags", type=int, default=MAX_PAGINAS_DEFAULT)
     p_full.add_argument("--skip-ia", action="store_true")
 
+    # instagram
+    p_ig = subparsers.add_parser("instagram", help="Scraper de Instagram (perfiles + posts)")
+    p_ig.add_argument("--perfil", nargs="+", help="Username(s) sin @")
+    p_ig.add_argument("--posts", nargs="+", help="URLs de posts o archivos .txt con URLs")
+    p_ig.add_argument("--posts-dump", action="store_true", help="Lee los .txt del Dump del vault")
+    p_ig.add_argument("--max", type=int, default=50, help="Max posts por perfil")
+    p_ig.add_argument("--dry-run", action="store_true")
+    p_ig.add_argument("--captions-out", metavar="PATH", help="Solo vuelca captions crudos (sin Haiku)")
+
     args = parser.parse_args()
 
     if args.comando == "scrape":
@@ -288,6 +309,10 @@ def main():
 
     elif args.comando == "full":
         asyncio.run(cmd_full(args.max_pags, args.skip_ia))
+
+    elif args.comando == "instagram":
+        cmd_instagram(args.perfil, args.posts, args.posts_dump,
+                      args.max, args.dry_run, args.captions_out)
 
 
 if __name__ == "__main__":
