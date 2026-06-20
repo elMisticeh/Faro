@@ -456,6 +456,7 @@ a.link-ext:hover{text-decoration:underline}
     <div class="sub-tab active" id="sub-tab-lista" onclick="switchSubTab('lista')">Lista</div>
     <div class="sub-tab" id="sub-tab-mapa" onclick="switchSubTab('mapa')">Mapa</div>
     <div class="sub-tab" id="sub-tab-validacion" onclick="switchSubTab('validacion')">Validación <span id="badge-validacion" style="display:none;background:var(--accent3);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px"></span></div>
+    <div class="sub-tab" id="sub-tab-desarrollo" onclick="switchSubTab('desarrollo')">Desarrollo</div>
   </div>
 
     <div class="filters-wrap">
@@ -724,6 +725,19 @@ a.link-ext:hover{text-decoration:underline}
 </div>
 
 
+  <div id="view-desarrollo" style="display:none;padding:14px 18px">
+    <div style="display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-bottom:14px">
+      <div class="filter-group"><label>Costo de obra $/m²</label>
+        <input type="number" id="dev-costo" value="15000" step="500" style="width:120px" oninput="renderDesarrollo()"></div>
+      <div class="filter-group"><label>Casas mín./colonia</label>
+        <input type="number" id="dev-min" value="3" min="1" step="1" style="width:80px" oninput="renderDesarrollo()"></div>
+      <label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="dev-baja" onchange="renderDesarrollo()"> mostrar baja confianza</label>
+      <button class="btn-reporte" onclick="generateReporteDesarrollo()" style="margin-left:auto;font-weight:700;background:linear-gradient(135deg,#059669,#10b981)">⬇ Reporte Desarrollo</button>
+    </div>
+    <div id="dev-map" style="height:360px;border-radius:8px;overflow:hidden;margin-bottom:14px"></div>
+    <div id="dev-table-container"></div>
+  </div>
 </div><!-- /view-mercado -->
 
 <!-- DEMOGRAFÍA VIEW ─────────────────────────────────────────── -->
@@ -836,15 +850,17 @@ function switchMainTab(tab) {
 function switchSubTab(sub) {
   currentSubTab = sub;
   currentTab = sub === 'lista' ? 'table' : sub;
-  ['lista','mapa','validacion'].forEach(id => {
+  ['lista','mapa','validacion','desarrollo'].forEach(id => {
     const el = document.getElementById('sub-tab-' + id);
     if (el) el.classList.toggle('active', id === sub);
   });
   document.getElementById('view-table').style.display      = sub === 'lista'      ? 'block' : 'none';
   document.getElementById('view-map').style.display        = sub === 'mapa'        ? 'block' : 'none';
   document.getElementById('view-validacion').style.display = sub === 'validacion' ? 'block' : 'none';
+  document.getElementById('view-desarrollo').style.display = sub === 'desarrollo' ? 'block' : 'none';
   if (sub === 'mapa') { initMap(); setTimeout(() => { if(map) map.invalidateSize(); }, 100); }
   if (sub === 'validacion') cargarValidacion();
+  if (sub === 'desarrollo') renderDesarrollo();
 }
 
 // Backward compat — older code calls switchTab(tab)
@@ -2093,6 +2109,257 @@ function calcularValorConstruccion(data) {
       }
     });
   }
+}
+
+// ── Motor de agregacion: margen de desarrollo por colonia ─────────────────────
+// Retorna array de colonias ordenadas por margenNeto desc.
+// costoObra: costo de construccion en $/m2 construido (benchmark de mercado)
+// minMuestras: numero minimo de casas en venta para incluir la colonia
+// Sin dependencias DOM ni Leaflet — testeable en Node.
+function calcularMargenDesarrollo(data, costoObra, minMuestras) {
+  function medianDesarrollo(a) {
+    if (!a || !a.length) return null;
+    const x = [...a].sort((p, q) => p - q);
+    return x[Math.floor(x.length / 2)];
+  }
+
+  // Terrenos por colonia (objetos completos) + mediana global de $/m2 (fallback)
+  const terrPorColonia = {};
+  const terrAll = [];
+  data.forEach(d => {
+    if (d.tipo_inmueble === 'terreno' && d.precio_x_m2_terreno > 0 && d.colonia) {
+      (terrPorColonia[d.colonia] = terrPorColonia[d.colonia] || []).push({
+        m2_terreno: d.m2_terreno, precio_mxn: d.precio_mxn, precio_x_m2_terreno: d.precio_x_m2_terreno
+      });
+      terrAll.push(d.precio_x_m2_terreno);
+    }
+  });
+  const pm2TerrGlobal = medianDesarrollo(terrAll);
+
+  // Universo: casas en venta con datos completos
+  const casas = data.filter(d =>
+    d.tipo_inmueble === 'casa' && d.tipo_operacion === 'venta' &&
+    d.m2_construccion > 0 && d.m2_terreno > 0 && d.precio_mxn > 0 && d.colonia);
+
+  const porColonia = {};
+  casas.forEach(d => { (porColonia[d.colonia] = porColonia[d.colonia] || []).push(d); });
+
+  const out = [];
+  Object.entries(porColonia).forEach(([col, arr]) => {
+    if (arr.length < minMuestras) return;
+    const terrArr = terrPorColonia[col] || [];
+    const fallback = terrArr.length < 2;
+    const pm2Terr = fallback ? pm2TerrGlobal : medianDesarrollo(terrArr.map(t => t.precio_x_m2_terreno));
+    if (!pm2Terr) return;
+
+    const residuales = [], tickets = [], m2cs = [], casasDetalle = [];
+    arr.forEach(d => {
+      const valorTerreno = d.m2_terreno * pm2Terr;
+      const valorConstr = d.precio_mxn - valorTerreno;
+      const res = valorConstr / d.m2_construccion;
+      if (res > 0) {
+        residuales.push(res); tickets.push(d.precio_mxn); m2cs.push(d.m2_construccion);
+        casasDetalle.push({
+          m2_terreno: d.m2_terreno, m2_construccion: d.m2_construccion, precio_mxn: d.precio_mxn,
+          valorTerreno, valorConstr, residual: res
+        });
+      }
+    });
+    if (!residuales.length) return;
+
+    const residualMediano = medianDesarrollo(residuales);
+    const m2cMediano = medianDesarrollo(m2cs);
+    const margenNeto = residualMediano - costoObra;
+    const nTerrenos = terrArr.length;
+    const confianza = (arr.length >= minMuestras && nTerrenos >= 2) ? 'alta'
+      : ((arr.length >= minMuestras || nTerrenos >= 2) && !fallback) ? 'media' : 'baja';
+
+    out.push({
+      colonia: col, nCasas: arr.length, nCasasUsadas: casasDetalle.length, nTerrenos,
+      pm2TerrenoMediana: pm2Terr, pm2TerrenoFallback: fallback,
+      ticketMediano: medianDesarrollo(tickets), m2cMediano, residualMediano, margenNeto,
+      margenPorCasa: margenNeto * m2cMediano, confianza,
+      casas: casasDetalle, terrenos: terrArr
+    });
+  });
+
+  return out.sort((a, b) => b.margenNeto - a.margenNeto);
+}
+
+function renderDesarrollo() {
+  const costo = parseFloat(document.getElementById('dev-costo').value) || 15000;
+  const minM  = parseInt(document.getElementById('dev-min').value) || 3;
+  const verBaja = document.getElementById('dev-baja').checked;
+  const rows = calcularMargenDesarrollo(allData, costo, minM);
+  window._margenDesarrollo = rows;
+  const vis = rows.filter(r => verBaja || r.confianza !== 'baja');
+  const dot = c => c==='alta'?'🟢':c==='media'?'🟡':'🔴';
+  const money = n => isNaN(n)||n==null?'—':'$'+Math.round(n).toLocaleString('es-MX');
+  const cont = document.getElementById('dev-table-container');
+  if (!vis.length) { cont.innerHTML = '<div class="empty">Sin colonias con suficientes muestras. Baja el mínimo o activa baja confianza.</div>'; return; }
+  cont.innerHTML = `<table><thead><tr>
+    <th>Colonia</th><th>Conf.</th><th>$/m² terreno</th><th>Ticket mediano</th>
+    <th>Residual $/m²c</th><th>Margen neto $/m²c</th><th>Margen/casa</th><th># casas</th></tr></thead><tbody>` +
+    vis.map(r => `<tr>
+      <td>${r.colonia}</td><td>${dot(r.confianza)}</td>
+      <td>${money(r.pm2TerrenoMediana)}</td><td>${money(r.ticketMediano)}</td>
+      <td>${money(r.residualMediano)}</td>
+      <td style="font-weight:700;color:${r.margenNeto>0?'#059669':'#b91c1c'}">${money(r.margenNeto)}</td>
+      <td>${money(r.margenPorCasa)}</td><td>${r.nCasas}</td></tr>`).join('') +
+    `</tbody></table>`;
+  if (typeof cargarColonias === 'function' && !coloniasData) { cargarColonias().then(()=>renderMapaDesarrollo(vis)); }
+  else renderMapaDesarrollo(vis);
+}
+
+let devMap = null, devColLayer = null;
+function colorMargen(m, maxAbs){
+  if (m == null || m <= 0) return null;        // sin relleno
+  const t = Math.max(0, Math.min(1, m / (maxAbs || 1)));
+  const lerp = (a,b) => Math.round(a + (b-a)*t);   // #d1fae5 (mint) -> #047857 (esmeralda)
+  return `rgb(${lerp(209,4)},${lerp(250,120)},${lerp(229,87)})`;
+}
+function renderMapaDesarrollo(rows){
+  const cont = document.getElementById('dev-map');
+  if (!cont) return;
+  if (!devMap){
+    devMap = L.map('dev-map').setView([25.54,-103.42], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; CARTO'}).addTo(devMap);
+  }
+  setTimeout(()=>devMap.invalidateSize(),60);
+  if (devColLayer){ devColLayer.remove(); devColLayer = null; }
+  if (!coloniasData) return;
+  // Match colonia rankeada <-> poligono IMPLAN. El GeoJSON fragmenta nombres
+  // ("Las Villas" -> "Residencial Las Villas Etapa XIII"...), asi que no basta
+  // con minusculas: hibrido exacto + clave-limpia (quita ruido) con blocklist.
+  const matchRow = devColoniaMatcher(rows);
+  const featRow = new Map(); let nPaint = 0;
+  coloniasData.features.forEach(f => { const r = matchRow(f.properties.colonia);
+    if (r){ featRow.set(f, r); nPaint++; } });
+  const maxAbs = Math.max(1, ...rows.filter(r=>r.margenNeto>0).map(r=>r.margenNeto));
+  const money = n => isNaN(n)||n==null?'—':'$'+Math.round(n).toLocaleString('es-MX');
+  const dot = c => c==='alta'?'🟢':c==='media'?'🟡':'🔴';
+  devColLayer = L.geoJSON(coloniasData, {
+    style: f => { const r = featRow.get(f);
+      const fill = r ? colorMargen(r.margenNeto, maxAbs) : null;
+      return { color:'#64748b', weight:1, opacity:0.6, dashArray:'4,3',
+               fillColor: fill || '#000000', fillOpacity: fill ? 0.55 : 0 }; },
+    onEachFeature: (f, layer) => {
+      const r = featRow.get(f);
+      if (r) layer.bindPopup(`<b>${r.colonia}</b> ${dot(r.confianza)}<br>
+        $/m² terreno: ${money(r.pm2TerrenoMediana)}<br>Residual: ${money(r.residualMediano)}/m²c<br>
+        <b>Margen neto: ${money(r.margenNeto)}/m²c</b><br>Margen/casa: ${money(r.margenPorCasa)}<br># casas: ${r.nCasasUsadas}`);
+    }
+  }).addTo(devMap);
+  console.log('Mapa desarrollo: '+nPaint+' poligonos pintados de '+coloniasData.features.length);
+}
+
+// Construye un matcher colonia-cruda -> fila rankeada. Limpia ruido del nombre
+// (residencial/fraccionamiento/etapa/numeros romanos) para puentear la
+// fragmentacion del GeoJSON IMPLAN; gana el alias mas especifico; bloquea
+// nombres genericos que produ(cirian falsos positivos.
+function devColoniaMatcher(rows){
+  const deac = s => (s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'');
+  const norm = s => deac(s).toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  // Ruido a quitar: tipo de asentamiento, etapa/seccion y ordinales de etapa.
+  const STOP = /\b(residencial|fraccionamiento|fracc|frac|colonia|col|privada|privadas|priv|cerrada|cerradas|sector|etapa|etepa|seccion|secc|ampliacion|ampl|conjunto|primera|segunda|tercera|cuarta|quinta|sexta|septima|octava|1ra|2da|3ra|4ta|5ta)\b/g;
+  const ROM  = /\b([ivx]+|[0-9]+a?)\b\.?\s*$/;
+  const clean = s => { let t = norm(s).replace(STOP,' ').replace(/\s+/g,' ').trim();
+    for (let i=0;i<3;i++) t = t.replace(ROM,'').trim(); return t; };
+  // Clave "suelta": quita articulos/conectores para puentear variantes como
+  // "del" vs "el" (Hacienda del Rosario <-> Residencial Hacienda EL Rosario).
+  // Solo se usa cuando deja >=2 tokens, para no colapsar "Las Villas" -> "villas".
+  const ART = new Set(['de','del','la','el','los','las']);
+  const loose = k => k.split(' ').filter(t => t && !ART.has(t)).join(' ');
+  const tokN  = s => s ? s.split(' ').filter(Boolean).length : 0;
+  const has   = (hay, needle) => (' '+hay+' ').includes(' '+needle+' ');
+  // Genericas/ambiguas: no pintar (valores basura o areas amplias del IMPLAN).
+  const BLOCK = new Set(['torreon','la rosita','centro','torreon centro']);
+  const rowKeys = (rows||[]).map(r => { const key = clean(r.colonia);
+      return { r, exact: norm(r.colonia), key, loose: loose(key) }; })
+    .filter(x => x.key.length >= 4 && !BLOCK.has(x.key));
+  return function(fname){
+    const fe = norm(fname), fk = clean(fname), fl = loose(fk);
+    let best = null, bestLen = -1;
+    for (const x of rowKeys){
+      const hit = (x.exact===fe) || (x.key===fk) || (fk.length>=4 && has(fk, x.key))
+        || (tokN(x.loose)>=2 && (x.loose===fl || has(fl, x.loose)));
+      if (hit && x.key.length > bestLen){ best = x.r; bestLen = x.key.length; }
+    }
+    return best;
+  };
+}
+
+function generateReporteDesarrollo(){
+  const costo = parseFloat(document.getElementById('dev-costo').value) || 15000;
+  const minM  = parseInt(document.getElementById('dev-min').value) || 3;
+  const rows = (window._margenDesarrollo && window._margenDesarrollo.length)
+    ? window._margenDesarrollo : calcularMargenDesarrollo(allData, costo, minM);
+  const vis = rows.filter(r => r.confianza !== 'baja');
+  if (!vis.length){ alert('No hay colonias con suficiente muestra. Ajusta los controles primero.'); return; }
+  const money = n => isNaN(n)||n==null?'&mdash;':'$'+Math.round(n).toLocaleString('es-MX');
+  const num = n => isNaN(n)||n==null?'&mdash;':Math.round(n).toLocaleString('es-MX');
+  const dot = c => c==='alta'?'🟢':'🟡';
+  const top = vis.slice(0,10);
+  const maxM = Math.max(...top.map(r=>r.margenNeto));
+  const hbar = (label,val,max)=>{const w=max?Math.max(2,Math.round(val/max*100)):2;
+    return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:11px"><span>${label}</span><span style="font-family:'Space Mono'">${money(val)}/m²c</span></div><div style="height:7px;background:#eef0f3;border-radius:4px"><div style="height:7px;background:#10b981;border-radius:4px;width:${w}%"></div></div></div>`;};
+  const fecha = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const css = `<style>@page{size:A4;margin:0}body{font-family:'Sora',system-ui;margin:0;color:#0d1117}
+    .page{width:210mm;min-height:297mm;padding:18mm 16mm;box-sizing:border-box;page-break-after:always}
+    .flow{padding:18mm 16mm}
+    h1{font-size:26px;margin:0 0 6px} h2{font-size:17px;color:#059669;margin:0 0 12px} h3{font-size:12px;margin:12px 0 5px;color:#0d1117}
+    table{width:100%;border-collapse:collapse;font-size:10.5px} th,td{padding:4px 6px;border-bottom:1px solid #e5e7eb;text-align:right}
+    th:first-child,td:first-child{text-align:left} .mono{font-family:'Space Mono',monospace}
+    .cover{background:#064e3b;color:#fff;display:flex;flex-direction:column;justify-content:center}
+    .block{page-break-inside:avoid;margin-bottom:16px;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px}
+    .sum{font-size:11px;color:#374151;margin:0 0 4px}
+    .note{font-size:11px;line-height:1.6;background:#fffbeb;border-left:3px solid #d97706;padding:10px 12px;border-radius:6px;margin-top:10px}</style>`;
+  const rowsTabla = vis.map(r=>`<tr><td>${r.colonia} ${dot(r.confianza)}</td><td>${money(r.pm2TerrenoMediana)}</td>
+    <td>${money(r.ticketMediano)}</td><td>${money(r.residualMediano)}</td>
+    <td style="font-weight:700;color:#059669">${money(r.margenNeto)}</td><td>${money(r.margenPorCasa)}</td><td>${r.nCasasUsadas}</td></tr>`).join('');
+
+  function detalleColonia(r){
+    const terr = (r.terrenos||[]).slice().sort((a,b)=>(b.m2_terreno||0)-(a.m2_terreno||0));
+    const terrShow = terr.slice(0,8);
+    const terrRows = terrShow.map(t=>`<tr><td>${num(t.m2_terreno)} m²</td><td>${money(t.precio_mxn)}</td><td>${money(t.precio_x_m2_terreno)}/m²</td></tr>`).join('')
+      || '<tr><td colspan="3" style="text-align:left;color:#9ca3af">Sin terrenos en la colonia — se usó la mediana global ($/m²)</td></tr>';
+    const terrMas = terr.length>8 ? `<div style="font-size:10px;color:#9ca3af;margin-top:3px">…y ${terr.length-8} terrenos más</div>` : '';
+    const casas = (r.casas||[]).slice().sort((a,b)=>b.residual-a.residual).slice(0,12);
+    const casaRows = casas.map(c=>`<tr><td>${num(c.m2_terreno)} m²</td><td>${num(c.m2_construccion)} m²</td><td>${money(c.precio_mxn)}</td><td>&minus;${money(c.valorTerreno)}</td><td>${money(c.valorConstr)}</td><td style="font-weight:700;color:#059669">${money(c.residual)}/m²c</td></tr>`).join('');
+    return `<div class="block">
+      <h2 style="margin-bottom:4px">${r.colonia} ${dot(r.confianza)} — margen neto ${money(r.margenNeto)}/m²c</h2>
+      <p class="sum">$/m² terreno (mediana): <b>${money(r.pm2TerrenoMediana)}</b>${r.pm2TerrenoFallback?' (mediana global, sin terrenos propios)':''} · residual mercado: <b>${money(r.residualMediano)}/m²c</b> · ticket mediano: <b>${money(r.ticketMediano)}</b> · ${r.nCasasUsadas} casas · ${r.nTerrenos} terrenos</p>
+      <h3>Terrenos en la colonia (${r.nTerrenos})</h3>
+      <table><thead><tr><th>Superficie</th><th>Precio</th><th>$/m²</th></tr></thead><tbody>${terrRows}</tbody></table>${terrMas}
+      <h3>Casas — extracción del valor del terreno</h3>
+      <table><thead><tr><th>m² terreno</th><th>m² const.</th><th>Precio</th><th>&minus; Valor terreno</th><th>= Valor construcción</th><th>Residual</th></tr></thead><tbody>${casaRows}</tbody></table>
+    </div>`;
+  }
+  const detalleHtml = top.map(detalleColonia).join('');
+
+  const html = `<!doctype html><html><head><meta charset="utf-8">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Mono&display=swap" rel="stylesheet">${css}</head><body>
+    <div class="page cover"><div style="font-size:13px;opacity:.8;margin-bottom:8px">FARO · Inteligencia de desarrollo</div>
+      <h1 style="color:#fff;font-size:34px">Dónde Desarrollar</h1>
+      <div style="font-size:15px;opacity:.9">Ranking de colonias por margen de construcción · Torreón</div>
+      <div style="margin-top:40px;font-size:12px;opacity:.85;line-height:2">
+        Fecha: ${fecha}<br>Universo: casas en venta<br>Costo de obra asumido: ${money(costo)}/m²<br>
+        Casas mínimas por colonia: ${minM}<br>Colonias analizadas: ${vis.length}</div></div>
+    <div class="page"><h2>Top 10 colonias por margen neto</h2>
+      ${top.map(r=>hbar(`${r.colonia} — margen/casa ${money(r.margenPorCasa)}`, r.margenNeto, maxM)).join('')}
+      <p style="font-size:11px;color:#6b7280;margin-top:16px">El margen neto es lo que el mercado paga por m² construido por encima del costo de obra asumido. A mayor margen, más rentable construir el mismo producto.</p></div>
+    <div class="page"><h2>Tabla completa</h2><table><thead><tr><th>Colonia</th><th>$/m² terreno</th><th>Ticket</th><th>Residual $/m²c</th><th>Margen neto</th><th>Margen/casa</th><th># casas</th></tr></thead><tbody>${rowsTabla}</tbody></table></div>
+    <div class="flow"><h2>Detalle por colonia — justificación con listings reales</h2>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 14px">Para cada colonia del Top 10: terrenos comparables (define el $/m² del suelo) y casas en venta con la extracción del terreno que arroja el valor de construcción por m².</p>
+      ${detalleHtml}</div>
+    <div class="page"><h2>Metodología y advertencias</h2>
+      <p style="font-size:12px;line-height:1.7">Por cada casa en venta se estima el <b>valor residual de construcción</b>:<br>
+      <span class="mono">residual $/m²c = (precio &minus; m²_terreno &times; $/m²_terreno_mediano_colonia) &divide; m²_construcción</span><br><br>
+      Se toma la <b>mediana</b> por colonia (robusta a outliers del scrape) y se resta el costo de obra asumido para obtener el <b>margen neto $/m²c</b>, métrica de ranking. El <b>$/m² de terreno</b> sale de la mediana de listings de terreno de la colonia; si hay menos de 2, se usa la mediana global (esas colonias quedan marcadas 🔴 baja confianza y se excluyen de este reporte).</p>
+      <div class="note">⚠ Datos de <b>oferta</b> (precios pedidos), no de transacciones cerradas. El scrape está pausado desde ~marzo 2026; trátese como foto de mercado, no como serie viva. Verificar en campo antes de decidir compra de terreno.</div></div>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  w.document.write(html); w.document.close();
 }
 
 // Llena el filtro de uso de suelo con las categorias presentes (uso_suelo_cat de Supabase)
