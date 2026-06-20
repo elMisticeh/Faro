@@ -954,7 +954,10 @@ function aplicarFiltros() {
     if (uso && (d.uso_suelo_cat || '') !== uso) return false;
     if (op     && d.tipo_operacion !== op)    return false;
     if (tipo   && d.tipo_inmueble  !== tipo)  return false;
-    if (fuente && d.pagina_fuente  !== fuente) return false;
+    if (fuente) {
+      if (fuente === 'instagram') { if (!(d.pagina_fuente||'').startsWith('instagram')) return false; }
+      else if (d.pagina_fuente !== fuente)      return false;
+    }
     if (d.precio_mxn > precioMax)             return false;
     if (d.precio_mxn && d.precio_mxn < precioMin) return false;
     if (m2Min > 0 && (d.m2_terreno||0) < m2Min)  return false;
@@ -2397,6 +2400,28 @@ function populateUsoFilter() {
   sel.innerHTML = '<option value="">Todos</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
+// Agrupa las cuentas de Instagram en el filtro de fuente: opcion "Todas las
+// cuentas" (umbrella instagram*) + cada cuenta distinta como sub-opcion.
+function populateFuenteFilter() {
+  const sel = document.getElementById('f-fuente');
+  if (!sel) return;
+  [...sel.querySelectorAll('optgroup.ig-grp')].forEach(o => o.remove());
+  const cuentas = [...new Set(allData.map(d => d.pagina_fuente)
+    .filter(s => s && s.startsWith('instagram')))].sort();
+  if (!cuentas.length) return;
+  const grp = document.createElement('optgroup');
+  grp.label = 'Instagram'; grp.className = 'ig-grp';
+  const all = document.createElement('option');
+  all.value = 'instagram'; all.textContent = 'Todas las cuentas';
+  grp.appendChild(all);
+  cuentas.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = '@' + c.replace('instagram_', '');
+    grp.appendChild(o);
+  });
+  sel.appendChild(grp);
+}
+
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function cargarDatos() {
   document.getElementById('table-container').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando desde Supabase...</div>';
@@ -2407,6 +2432,7 @@ async function cargarDatos() {
     actualizarStats(allData);
     populateColoniaFilter();
     populateUsoFilter();
+    populateFuenteFilter();
     ordenar('fecha_ultimo_scrape', true);
     if (currentTab === 'map') renderMap();
   } catch(e) {
