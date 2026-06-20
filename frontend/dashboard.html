@@ -2228,23 +2228,55 @@ function renderMapaDesarrollo(rows){
   setTimeout(()=>devMap.invalidateSize(),60);
   if (devColLayer){ devColLayer.remove(); devColLayer = null; }
   if (!coloniasData) return;
-  const norm = s => (s||'').trim().toLowerCase();
-  const byCol = {}; rows.forEach(r => byCol[norm(r.colonia)] = r);
+  // Match colonia rankeada <-> poligono IMPLAN. El GeoJSON fragmenta nombres
+  // ("Las Villas" -> "Residencial Las Villas Etapa XIII"...), asi que no basta
+  // con minusculas: hibrido exacto + clave-limpia (quita ruido) con blocklist.
+  const matchRow = devColoniaMatcher(rows);
+  const featRow = new Map(); let nPaint = 0;
+  coloniasData.features.forEach(f => { const r = matchRow(f.properties.colonia);
+    if (r){ featRow.set(f, r); nPaint++; } });
   const maxAbs = Math.max(1, ...rows.filter(r=>r.margenNeto>0).map(r=>r.margenNeto));
   const money = n => isNaN(n)||n==null?'—':'$'+Math.round(n).toLocaleString('es-MX');
   const dot = c => c==='alta'?'🟢':c==='media'?'🟡':'🔴';
   devColLayer = L.geoJSON(coloniasData, {
-    style: f => { const r = byCol[norm(f.properties.colonia)];
+    style: f => { const r = featRow.get(f);
       const fill = r ? colorMargen(r.margenNeto, maxAbs) : null;
       return { color:'#64748b', weight:1, opacity:0.6, dashArray:'4,3',
                fillColor: fill || '#000000', fillOpacity: fill ? 0.55 : 0 }; },
     onEachFeature: (f, layer) => {
-      const r = byCol[norm(f.properties.colonia)];
+      const r = featRow.get(f);
       if (r) layer.bindPopup(`<b>${r.colonia}</b> ${dot(r.confianza)}<br>
         $/m² terreno: ${money(r.pm2TerrenoMediana)}<br>Residual: ${money(r.residualMediano)}/m²c<br>
         <b>Margen neto: ${money(r.margenNeto)}/m²c</b><br>Margen/casa: ${money(r.margenPorCasa)}<br># casas: ${r.nCasasUsadas}`);
     }
   }).addTo(devMap);
+  console.log('Mapa desarrollo: '+nPaint+' poligonos pintados de '+coloniasData.features.length);
+}
+
+// Construye un matcher colonia-cruda -> fila rankeada. Limpia ruido del nombre
+// (residencial/fraccionamiento/etapa/numeros romanos) para puentear la
+// fragmentacion del GeoJSON IMPLAN; gana el alias mas especifico; bloquea
+// nombres genericos que produ(cirian falsos positivos.
+function devColoniaMatcher(rows){
+  const deac = s => (s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'');
+  const norm = s => deac(s).toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  const STOP = /\b(residencial|fraccionamiento|fracc|frac|colonia|col|privada|privadas|priv|cerrada|cerradas|sector|etapa|etepa|seccion|secc|ampliacion|ampl|conjunto)\b/g;
+  const ROM  = /\b([ivx]+|[0-9]+a?)\b\.?\s*$/;
+  const clean = s => { let t = norm(s).replace(STOP,' ').replace(/\s+/g,' ').trim();
+    for (let i=0;i<3;i++) t = t.replace(ROM,'').trim(); return t; };
+  // Genericas/ambiguas: no pintar (valores basura o areas amplias del IMPLAN).
+  const BLOCK = new Set(['torreon','la rosita','centro','torreon centro']);
+  const rowKeys = (rows||[]).map(r => ({ r, exact: norm(r.colonia), key: clean(r.colonia) }))
+                            .filter(x => x.key.length >= 4 && !BLOCK.has(x.key));
+  return function(fname){
+    const fe = norm(fname), fk = clean(fname);
+    let best = null, bestLen = -1;
+    for (const x of rowKeys){
+      const hit = (x.exact===fe) || (x.key===fk) || (fk.length>=4 && (' '+fk+' ').includes(' '+x.key+' '));
+      if (hit && x.key.length > bestLen){ best = x.r; bestLen = x.key.length; }
+    }
+    return best;
+  };
 }
 
 function generateReporteDesarrollo(){

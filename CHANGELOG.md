@@ -5,6 +5,44 @@
 > `archive/versions/faro-MKn-FECHA.html` (+ su commit baseline). Si algo se rompe,
 > ese snapshot es la version de respaldo funcional.
 
+## v3.4.0 "MK7" - 2026-06-19
+
+Objetivo: nueva lente "Donde Desarrollar" que rankea colonias por margen neto
+$/m2 construido (residual de mercado - costo de obra fijo ajustable). Invierte la
+logica del flipping: en vez de "comprar barato", busca "donde vende mas caro el m2".
+
+> Nota: no hay entrada "MK6" en este changelog. La linea MK6 (benchmark vs guia
+> API PropiedadesMexico + tabla `desarrollos`) quedo en archivos sin commitear
+> (`scripts/colonia_alias.py`, `benchmark_api_laguna.py`, `seed_desarrollos_api.py`,
+> `mk6_desarrollos.sql`); pendiente de retomar por separado.
+
+### Lente Donde Desarrollar
+- `calcularMargenDesarrollo(data, costoObra, minMuestras)`: por colonia toma la
+  mediana del residual de construccion de las casas en venta (precio - m2_terreno x
+  $/m2_terreno_mediano) / m2_construccion, le resta el costo de obra -> margen neto.
+  Semaforo de confianza alta/media/baja segun muestra y si usa fallback global.
+- Sub-tab "Desarrollo" en Mercado: controles en vivo (costo de obra, casas min,
+  toggle baja confianza) + tabla-ranking. `renderDesarrollo()`.
+- Mapa de calor por colonia (`renderMapaDesarrollo`): borde punteado neutro +
+  relleno mint->esmeralda solo en colonias rankeadas. Default casas min 3.
+- Reporte imprimible `generateReporteDesarrollo()` (estilo GRID): portada + ranking
+  con barras + tabla completa + **detalle por colonia con listings reales**
+  (terrenos comparables + casas con la extraccion del terreno).
+
+### Fix de match colonia<->poligono IMPLAN (2026-06-19)
+- El GeoJSON IMPLAN fragmenta nombres ("Las Villas" -> "Residencial Las Villas
+  Etapa XIII", ...). El match anterior (solo minusculas) pintaba 6 colonias.
+- Nuevo `devColoniaMatcher(rows)`: hibrido exacto + clave-limpia (quita
+  residencial/fraccionamiento/etapa/numeros romanos) por especificidad (gana el
+  alias mas largo) + **blocklist** de genericos (Torreon, La Rosita) para evitar
+  falsos positivos. Ahora pinta 49 poligonos en 12 colonias, 0 basura.
+- "Hacienda del Rosario" sigue sin pintar: no existe su poligono en el IMPLAN
+  (queda en tabla/reporte). Test: `scripts/colonia_match.test.js` (node).
+
+### Tests
+- `scripts/margen_desarrollo.test.js` (matematica del motor) +
+  `scripts/colonia_match.test.js` (fragmentacion, acentos, especificidad, blocklist).
+
 ## v3.3.0 "MK5" - 2026-06-06
 
 Objetivo: uso de suelo con clave IMPLAN exacta + modo edicion de ubicacion protegida.
