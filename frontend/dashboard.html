@@ -2260,19 +2260,29 @@ function renderMapaDesarrollo(rows){
 function devColoniaMatcher(rows){
   const deac = s => (s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'');
   const norm = s => deac(s).toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
-  const STOP = /\b(residencial|fraccionamiento|fracc|frac|colonia|col|privada|privadas|priv|cerrada|cerradas|sector|etapa|etepa|seccion|secc|ampliacion|ampl|conjunto)\b/g;
+  // Ruido a quitar: tipo de asentamiento, etapa/seccion y ordinales de etapa.
+  const STOP = /\b(residencial|fraccionamiento|fracc|frac|colonia|col|privada|privadas|priv|cerrada|cerradas|sector|etapa|etepa|seccion|secc|ampliacion|ampl|conjunto|primera|segunda|tercera|cuarta|quinta|sexta|septima|octava|1ra|2da|3ra|4ta|5ta)\b/g;
   const ROM  = /\b([ivx]+|[0-9]+a?)\b\.?\s*$/;
   const clean = s => { let t = norm(s).replace(STOP,' ').replace(/\s+/g,' ').trim();
     for (let i=0;i<3;i++) t = t.replace(ROM,'').trim(); return t; };
+  // Clave "suelta": quita articulos/conectores para puentear variantes como
+  // "del" vs "el" (Hacienda del Rosario <-> Residencial Hacienda EL Rosario).
+  // Solo se usa cuando deja >=2 tokens, para no colapsar "Las Villas" -> "villas".
+  const ART = new Set(['de','del','la','el','los','las']);
+  const loose = k => k.split(' ').filter(t => t && !ART.has(t)).join(' ');
+  const tokN  = s => s ? s.split(' ').filter(Boolean).length : 0;
+  const has   = (hay, needle) => (' '+hay+' ').includes(' '+needle+' ');
   // Genericas/ambiguas: no pintar (valores basura o areas amplias del IMPLAN).
   const BLOCK = new Set(['torreon','la rosita','centro','torreon centro']);
-  const rowKeys = (rows||[]).map(r => ({ r, exact: norm(r.colonia), key: clean(r.colonia) }))
-                            .filter(x => x.key.length >= 4 && !BLOCK.has(x.key));
+  const rowKeys = (rows||[]).map(r => { const key = clean(r.colonia);
+      return { r, exact: norm(r.colonia), key, loose: loose(key) }; })
+    .filter(x => x.key.length >= 4 && !BLOCK.has(x.key));
   return function(fname){
-    const fe = norm(fname), fk = clean(fname);
+    const fe = norm(fname), fk = clean(fname), fl = loose(fk);
     let best = null, bestLen = -1;
     for (const x of rowKeys){
-      const hit = (x.exact===fe) || (x.key===fk) || (fk.length>=4 && (' '+fk+' ').includes(' '+x.key+' '));
+      const hit = (x.exact===fe) || (x.key===fk) || (fk.length>=4 && has(fk, x.key))
+        || (tokN(x.loose)>=2 && (x.loose===fl || has(fl, x.loose)));
       if (hit && x.key.length > bestLen){ best = x.r; bestLen = x.key.length; }
     }
     return best;
