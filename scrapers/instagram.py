@@ -590,6 +590,19 @@ async def run(perfiles, post_urls, max_posts, dry_run, captions_out=None):
         return
     guardar(todos, dry_run)
 
+    # Dedup por propiedad: desactiva republicaciones del mismo inmueble (mismo
+    # colonia+m2, distinto shortcode) dejando el anuncio mas reciente.
+    if not dry_run and todos:
+        try:
+            from core.duplicados import marcar_duplicados_db
+            st = marcar_duplicados_db('instagram')
+            print(f"Dedup propiedad: {st['desactivados']} duplicados desactivados "
+                  f"({st['grupos_dup']} grupos, {st['protegidos']} protegidos por edicion manual)")
+            for d in st['detalle']:
+                print(f"  - {d['colonia']}: ${d['precio']} desactivado, vigente ${d['precio_vigente']}")
+        except Exception as e:
+            print(f"  [dedup] omitido: {e}")
+
 
 def main():
     ap = argparse.ArgumentParser(description="Scraper Instagram inmobiliario (perfiles + posts)")

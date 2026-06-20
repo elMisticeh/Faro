@@ -205,6 +205,18 @@ def cmd_instagram(perfiles, posts, posts_dump, max_posts, dry_run, captions_out)
         print(f"[instagram] {len(urls)} posts sueltos a procesar")
     asyncio.run(ig_run(perfiles, urls, max_posts, dry_run, captions_out))
 
+# ── Comando: dedup (duplicados por propiedad) ────────────────────────────────
+
+def cmd_dedup(fuente, dry_run):
+    from core.duplicados import marcar_duplicados_db
+    st = marcar_duplicados_db(fuente, dry_run=dry_run)
+    print(f"Activos: {st['activos']} | grupos duplicados: {st['grupos_dup']} | "
+          f"desactivados: {st['desactivados']} | protegidos: {st['protegidos']}"
+          + ("  (DRY RUN)" if dry_run else ""))
+    for d in st['detalle']:
+        print(f"  - {d['colonia']}: {d['desactivado']} (${d['precio']}) -> "
+              f"vigente {d['vigente']} (${d['precio_vigente']})")
+
 # ── Comando: full (pipeline completo) ────────────────────────────────────────
 
 async def cmd_full(max_pags: int, skip_ia: bool):
@@ -293,6 +305,12 @@ def main():
     p_ig.add_argument("--dry-run", action="store_true")
     p_ig.add_argument("--captions-out", metavar="PATH", help="Solo vuelca captions crudos (sin Haiku)")
 
+    # dedup
+    p_dedup = subparsers.add_parser("dedup", help="Desactiva duplicados por propiedad (mismo colonia+m2)")
+    p_dedup.add_argument("--fuente", default="instagram",
+                         help="Prefijo de pagina_fuente (default 'instagram'; vacio = toda la tabla)")
+    p_dedup.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     if args.comando == "scrape":
@@ -313,6 +331,9 @@ def main():
     elif args.comando == "instagram":
         cmd_instagram(args.perfil, args.posts, args.posts_dump,
                       args.max, args.dry_run, args.captions_out)
+
+    elif args.comando == "dedup":
+        cmd_dedup(args.fuente, args.dry_run)
 
 
 if __name__ == "__main__":
