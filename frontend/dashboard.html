@@ -2151,7 +2151,9 @@ function calcularMargenDesarrollo(data, costoObra, minMuestras, costoModo) {
   data.forEach(d => {
     if (d.tipo_inmueble === 'terreno' && d.precio_x_m2_terreno > 0 && d.colonia) {
       (terrPorColonia[d.colonia] = terrPorColonia[d.colonia] || []).push({
-        m2_terreno: d.m2_terreno, precio_mxn: d.precio_mxn, precio_x_m2_terreno: d.precio_x_m2_terreno
+        m2_terreno: d.m2_terreno, precio_mxn: d.precio_mxn, precio_x_m2_terreno: d.precio_x_m2_terreno,
+        link_publicacion: d.link_publicacion, descripcion: d.descripcion,
+        direccion: d.direccion, pagina_fuente: d.pagina_fuente
       });
       terrAll.push(d.precio_x_m2_terreno);
     }
@@ -2342,7 +2344,13 @@ function generateReporteDesarrollo(){
     .cover{background:#064e3b;color:#fff;display:flex;flex-direction:column;justify-content:center}
     .block{page-break-inside:avoid;margin-bottom:16px;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px}
     .sum{font-size:11px;color:#374151;margin:0 0 4px}
-    .note{font-size:11px;line-height:1.6;background:#fffbeb;border-left:3px solid #d97706;padding:10px 12px;border-radius:6px;margin-top:10px}</style>`;
+    .note{font-size:11px;line-height:1.6;background:#fffbeb;border-left:3px solid #d97706;padding:10px 12px;border-radius:6px;margin-top:10px}
+    .rec{page-break-inside:avoid;margin-bottom:16px}
+    .rec h3{font-size:14px;color:#059669;margin:0 0 7px}
+    .rec-l{border:1px solid #e5e7eb;border-left:3px solid #10b981;border-radius:8px;padding:10px 13px;margin-bottom:9px;background:#f6fefb}
+    .rec-h{font-size:12px;margin-bottom:3px} .rec-d{font-size:10.5px;color:#6b7280;margin-bottom:5px}
+    .rec-j{font-size:11px;line-height:1.6;margin:0 0 7px;color:#1f2937}
+    .rec-c{font-size:10.5px;color:#374151;border-top:1px dashed #d1d5db;padding-top:6px} .rec-c a{color:#059669}</style>`;
   const rowsTabla = vis.map(r=>`<tr><td>${r.colonia} ${dot(r.confianza)}</td><td>${money(r.pm2TerrenoMediana)}</td>
     <td>${money(r.costoObra)}</td><td>${money(r.ticketMediano)}</td><td>${money(r.residualMediano)}</td>
     <td style="font-weight:700;color:#059669">${money(r.margenNeto)}</td><td>${money(r.margenPorCasa)}</td><td>${r.nCasasUsadas}</td></tr>`).join('');
@@ -2366,6 +2374,50 @@ function generateReporteDesarrollo(){
   }
   const detalleHtml = top.map(detalleColonia).join('');
 
+  // ── Recomendaciones: por colonia top con terrenos, 1-2 lotes reales ──────────
+  function extraerTel(desc){
+    if(!desc) return null;
+    const m = String(desc).match(/(?:\+?52[\s-]?1?[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}/);
+    if(!m) return null;
+    let n = m[0].replace(/\D/g,''); if(n.length>10) n=n.slice(-10);
+    return n.length===10 ? n.replace(/(\d{3})(\d{3})(\d{4})/,'$1 $2 $3') : null;
+  }
+  function notaTam(m2){
+    if(!m2) return '';
+    if(m2>=1000) return 'Lote amplio: apto para residencia de gran formato o varias unidades.';
+    if(m2>=400)  return 'Tamaño ideal para una residencia con jardín.';
+    if(m2>=200)  return 'Lote compacto, eficiente para una vivienda funcional.';
+    return 'Lote pequeño: conviene un proyecto vertical o compacto.';
+  }
+  const fuenteLabel = s => s && s.startsWith('instagram') ? '@'+s.replace('instagram_','') : (s||'fuente s/d');
+  function recomendacionColonia(r){
+    // Preferir terrenos CON telefono del anunciante, luego por mejor $/m2.
+    const terr = (r.terrenos||[]).filter(t=>t.precio_x_m2_terreno>0)
+      .map(t=>({...t, _tel: extraerTel(t.descripcion)}))
+      .sort((a,b)=> (b._tel?1:0)-(a._tel?1:0) || a.precio_x_m2_terreno-b.precio_x_m2_terreno)
+      .slice(0,2);
+    if(!terr.length) return '';
+    const med = r.pm2TerrenoMediana;
+    const cards = terr.map(t=>{
+      const pct = med ? Math.round((t.precio_x_m2_terreno-med)/med*100) : null;
+      const pctTxt = pct===null ? '' : (pct<=0
+        ? `<b style="color:#059669">${Math.abs(pct)}% por debajo</b> de la mediana de terreno de la colonia`
+        : `<b style="color:#b45309">${pct}% por encima</b> de la mediana de terreno de la colonia`);
+      const tel = t._tel;
+      const just = `En <b>${r.colonia}</b> el m² construido se vende en ~${money(r.residualMediano)}/m²c y construir cuesta ~${money(r.costoObra)}/m²c, dejando un <b>margen de ${money(r.margenNeto)}/m²c</b>. Este lote de <b>${num(t.m2_terreno)} m²</b> a ${money(t.precio_x_m2_terreno)}/m² está ${pctTxt} (${money(med)}/m²), por lo que ${pct!==null&&pct<=0?'<b>mejora</b>':'sostiene'} el margen al desarrollar. ${notaTam(t.m2_terreno)}`;
+      return `<div class="rec-l">
+        <div class="rec-h">🏷️ Terreno · ${num(t.m2_terreno)} m² · <b>${money(t.precio_mxn)}</b> · ${money(t.precio_x_m2_terreno)}/m²</div>
+        ${t.direccion?`<div class="rec-d">${t.direccion}</div>`:''}
+        <p class="rec-j">${just}</p>
+        <div class="rec-c">${tel?`📞 <b>${tel}</b> · `:'📇 Contacto en el anuncio · '}${fuenteLabel(t.pagina_fuente)}${t.link_publicacion?` · <a href="${t.link_publicacion}">ver anuncio</a>`:''}</div>
+      </div>`;
+    }).join('');
+    return `<div class="rec"><h3>${r.colonia} ${dot(r.confianza)} — recomendado para desarrollar</h3>${cards}</div>`;
+  }
+  const recoTop = vis.filter(r=>r.margenNeto>0 && (r.terrenos||[]).some(t=>t.precio_x_m2_terreno>0)).slice(0,6);
+  const recoHtml = recoTop.map(recomendacionColonia).join('') ||
+    '<p style="font-size:11px;color:#6b7280">No hay terrenos a la venta en las colonias top para emitir una recomendación específica.</p>';
+
   const html = `<!doctype html><html><head><meta charset="utf-8">
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Mono&display=swap" rel="stylesheet">${css}</head><body>
     <div class="page cover"><div style="font-size:13px;opacity:.8;margin-bottom:8px">FARO · Inteligencia de desarrollo</div>
@@ -2381,6 +2433,9 @@ function generateReporteDesarrollo(){
     <div class="flow"><h2>Detalle por colonia — justificación con listings reales</h2>
       <p style="font-size:11px;color:#6b7280;margin:0 0 14px">Para cada colonia del Top 10: terrenos comparables (define el $/m² del suelo) y casas en venta con la extracción del terreno que arroja el valor de construcción por m².</p>
       ${detalleHtml}</div>
+    <div class="flow"><h2>Recomendaciones — qué comprar para desarrollar</h2>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 14px">Una o dos oportunidades de <b>terreno a la venta</b> por colonia del top, con sus características, el contacto del anunciante y la justificación según el margen de desarrollo.</p>
+      ${recoHtml}</div>
     <div class="page"><h2>Metodología y advertencias</h2>
       <p style="font-size:12px;line-height:1.7">Por cada casa en venta se estima el <b>valor residual de construcción</b>:<br>
       <span class="mono">residual $/m²c = (precio &minus; m²_terreno &times; $/m²_terreno_mediano_colonia) &divide; m²_construcción</span><br><br>
