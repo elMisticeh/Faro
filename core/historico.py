@@ -10,7 +10,7 @@ Uso standalone:
 """
 
 import os, json, argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -22,6 +22,20 @@ def log(msg, nivel='INFO'):
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     icons = {'INFO': '  ', 'OK': '✓ ', 'ERR': '✗ ', 'WARN': '⚠ ', 'HEAD': '══'}
     print(f"[{ts}] {icons.get(nivel,'  ')}{msg}")
+
+
+def _parse_ts(s):
+    """Parsea timestamps de Supabase (siempre UTC) como datetime aware.
+    Evita comparar/restar contra datetime.now() naive (TypeError silenciado)."""
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def fetch_listings_db(fuente=None):
@@ -74,7 +88,7 @@ def detectar_cambios(fuente='todas'):
     log(f"DETECCIÓN DE CAMBIOS — fuente: {fuente}", 'HEAD')
 
     sesion_id = crear_sesion(fuente)
-    ahora = datetime.now()
+    ahora = datetime.now(timezone.utc)
 
     listings = fetch_listings_db(fuente)
     log(f"  Listings en DB: {len(listings)}")
@@ -85,15 +99,11 @@ def detectar_cambios(fuente='todas'):
     # ── Bajados: activos no vistos en ≥3 días ────────────────────────────────
     bajados = []
     for l in activos:
-        ultimo = (l.get('fecha_ultimo_scrape') or '')[:10]
-        if ultimo < hoy:
-            try:
-                from datetime import timedelta
-                fecha_ult = datetime.fromisoformat(l['fecha_ultimo_scrape'].replace('Z', ''))
-                if (ahora - fecha_ult).days >= 3:
-                    bajados.append(l)
-            except Exception:
-                pass
+        fecha_ult = _parse_ts(l.get('fecha_ultimo_scrape'))
+        if fecha_ult is None:
+            continue
+        if fecha_ult.date().isoformat() < hoy and (ahora - fecha_ult).days >= 3:
+            bajados.append(l)
 
     log(f"  Activos: {len(activos)} | Bajados detectados: {len(bajados)}")
 
@@ -108,7 +118,11 @@ def detectar_cambios(fuente='todas'):
         log(f"  Marcados como bajados: {len(bajados)}", 'WARN')
 
     # ── Cambios de precio ────────────────────────────────────────────────────
-    vistos_hoy = [l for l in activos if (l.get('fecha_ultimo_scrape') or '')[:10] == hoy]
+    vistos_hoy = []
+    for l in activos:
+        ts = _parse_ts(l.get('fecha_ultimo_scrape'))
+        if ts and ts.date().isoformat() == hoy:
+            vistos_hoy.append(l)
 
     precio_cambios = 0
     for l in vistos_hoy:
