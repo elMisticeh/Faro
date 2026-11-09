@@ -1239,15 +1239,15 @@ function crearIcono(tipo, esOportunidad) {
 
 let baseLayer = null;
 const BASEMAPS = {
-  dark:      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  light:     'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  dark:      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  light:     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
   satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
 };
 
 function setBasemap(name) {
   if (!map) return;
   if (baseLayer) map.removeLayer(baseLayer);
-  baseLayer = L.tileLayer(BASEMAPS[name], { attribution:'© CARTO / ESRI', maxZoom:19 }).addTo(map);
+  baseLayer = L.tileLayer(BASEMAPS[name], { attribution:'© Esri', maxZoom:19,maxNativeZoom:16 }).addTo(map);
   baseLayer.bringToBack();
   document.querySelectorAll('.basemap-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('bm-'+name).classList.add('active');
@@ -2251,7 +2251,7 @@ function renderMapaDesarrollo(rows){
   if (!cont) return;
   if (!devMap){
     devMap = L.map('dev-map').setView([25.54,-103.42], 12);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; CARTO'}).addTo(devMap);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:16,attribution:'&copy; Esri'}).addTo(devMap);
   }
   setTimeout(()=>devMap.invalidateSize(),60);
   if (devColLayer){ devColLayer.remove(); devColLayer = null; }
@@ -2729,7 +2729,7 @@ function abrirMapaPin(id, lat, lng) {
 
   if (!_pinMap) {
     _pinMap = L.map('pin-map').setView([lat, lng], 16);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
       attribution: '&copy; CartoDB', maxZoom: 19
     }).addTo(_pinMap);
 
@@ -2915,7 +2915,7 @@ async function initDemoMap() {
   if (demoInitDone) return;
   demoInitDone = true;
   demoMap = L.map('demo-map', { center: [25.5428, -103.4068], zoom: 12, preferCanvas: true });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 19
   }).addTo(demoMap);
 
